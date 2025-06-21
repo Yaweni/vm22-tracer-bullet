@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>VM-22 Tracer Bullet</title>
+    <style> body { font-family: sans-serif; text-align: center; margin-top: 50px; } </style>
+</head>
+<body>
+    <h1>VM-22 Calculation Tracer</h1>
+    <button id="runButton">Run Calculation</button>
+    <div id="results" style="margin-top: 20px; font-size: 1.2em;"></div>
+
+    <script>
+        // IMPORTANT: You will replace this URL after the engine is deployed
+        const engineUrl = "PASTE_YOUR_FUNCTION_URL_HERE"; 
+
+        document.getElementById('runButton').addEventListener('click', () => {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerText = 'Calculating...';
+
+            fetch(engineUrl)
+                .then(response => response.json())
+                .then(data => {
+                    resultsDiv.innerText = `Total Reserve: $${data.total_reserve.toLocaleString()}`;
+                })
+                .catch(error => {
+                    resultsDiv.innerText = 'Error: Could not run calculation.';
+                    console.error('Error:', error);
+                });
+        });
+    </script>
+</body>
+</html>
