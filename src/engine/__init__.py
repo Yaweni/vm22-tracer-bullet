@@ -3,7 +3,7 @@ import azure.functions as func
 from azure.storage.blob import BlobServiceClient
 
 # For the tracer, we hardcode these. For a real app, they'd be dynamic.
-STORAGE_CONNECTION_STRING = os.environ.get("AzureWebJobsStorage")
+STORAGE_CONNECTION_STRING = os.environ.get("UPLOADS_STORAGE_CONNECTION_STRING")
 CONTAINER_NAME = "uploads"
 BLOB_NAME = "tracer_policies.csv"
 
