@@ -19,7 +19,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         total_reserve = df['reserve'].sum()
 
         response_data = { "total_reserve": total_reserve }
-        #just for demonstration, we return the total reserve
+        #just for demonstration, we return the total reserve##
         return func.HttpResponse(
             body=json.dumps(response_data),
             mimetype="application/json",
