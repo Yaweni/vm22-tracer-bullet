@@ -18,7 +18,6 @@ BLOB_NAME = "tracer_policies.csv"
 app = func.FunctionApp()
 
 @app.function_name(name="RunCalculation")
-@app.route(route="func-vm22-tracer-engine", auth_level=func.AuthLevel.ANONYMOUS)
 @app.route(route="calculate/{product_code}", auth_level=func.AuthLevel.ANONYMOUS, methods=["post"])
 def run_calculation(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python Calculation Engine triggered.')
