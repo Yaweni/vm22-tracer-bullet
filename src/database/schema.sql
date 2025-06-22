@@ -1,0 +1,27 @@
+-- This script creates the core tables for our application.
+
+-- 1. The Policies table: Our master, canonical data store.
+CREATE TABLE Policies (
+    Policy_ID NVARCHAR(50) NOT NULL PRIMARY KEY, Product_Code NVARCHAR(50) NOT NULL,
+    Valuation_Date DATE NOT NULL, Issue_Date DATE NOT NULL, Issue_Age INT NOT NULL,
+    Gender CHAR(1) NOT NULL, Policy_Status_Code INT NOT NULL, Account_Value DECIMAL(18, 2) NOT NULL,
+    Surrender_Charge_Schedule NVARCHAR(MAX), Guaranteed_Crediting_Rate DECIMAL(5, 4),
+    Index_Strategy_Code NVARCHAR(50), Sub_Account_Allocation NVARCHAR(MAX),
+    Rider_Codes NVARCHAR(255), GLWB_Benefit_Base DECIMAL(18, 2),
+    GLWB_Withdrawal_Rate DECIMAL(5, 4), Load_Timestamp DATETIME DEFAULT GETDATE()
+);
+
+-- 2. The CalculationJobs table: A log to track every run.
+CREATE TABLE CalculationJobs (
+    JobID INT IDENTITY(1,1) PRIMARY KEY, Product_Code NVARCHAR(50) NOT NULL,
+    AssumptionSetID NVARCHAR(50), Job_Status NVARCHAR(20) NOT NULL,
+    Requested_Timestamp DATETIME DEFAULT GETDATE(), Completed_Timestamp DATETIME
+);
+
+-- 3. The Results table: Stores the final output of each calculation.
+CREATE TABLE Results (
+    ResultID INT IDENTITY(1,1) PRIMARY KEY,
+    JobID INT FOREIGN KEY REFERENCES CalculationJobs(JobID),
+    Result_Type NVARCHAR(50) NOT NULL, -- e.g., 'Deterministic_Reserve'
+    Result_Value DECIMAL(18, 2) NOT NULL
+);
