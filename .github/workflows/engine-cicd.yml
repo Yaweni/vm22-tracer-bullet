@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - 'src/engine/**'
+      - '.github/workflows/engine-cicd.yml'
 
 env:
   AZURE_FUNCTIONAPP_PACKAGE_PATH: 'src/engine'
