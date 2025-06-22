@@ -1,3 +1,4 @@
-pandas
+pandas==1.2.3
+numpy==1.19.5
 azure-functions
 azure-storage-blob
