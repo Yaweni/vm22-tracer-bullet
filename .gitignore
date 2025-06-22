@@ -2,5 +2,6 @@
 /src/engine/.vscode
 /src/engine/.venv
 /src/engine/local.settings.json
+/.vscode/
 
 
