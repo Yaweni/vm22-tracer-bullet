@@ -1,4 +1,4 @@
-# FINAL, ROBUST PIPELINE for the Calculation Engine
+# FINAL, SIMPLIFIED PIPELINE - Enables Remote Build
 name: Build and Deploy Calculation Engine
 
 on:
@@ -10,34 +10,14 @@ on:
 
 env:
   AZURE_FUNCTIONAPP_PACKAGE_PATH: 'src/engine'
-  PYTHON_VERSION: '3.11'
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
     steps:
     - name: 'Checkout repository code'
-      uses: actions/checkout@v4
+      uses: actions/checkout@v3
 
-    - name: 'Set up Python version'
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-
-    - name: 'Create and start virtual environment, and install dependencies'
-      run: |
-        cd ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-        python -m venv .venv
-        source .venv/bin/activate
-        pip install -r requirements.txt
-    
-    - name: 'Zip the application with dependencies for deployment'
-      run: |
-        cd ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-        zip -r ../../app.zip . -x ".venv/*" # Zip the engine folder, excluding the venv itself
-        cd .venv/lib/python${{ env.PYTHON_VERSION }}/site-packages
-        zip -r ../../../../../app.zip . # Add the installed libraries to the same zip file
-        
     - name: 'Login to Azure'
       uses: azure/login@v1
       with:
@@ -47,4 +27,4 @@ jobs:
       uses: Azure/functions-action@v1
       with:
         app-name: 'func-vm22-tracer-engine'
-        package: app.zip # Deploy the manually created zip file
+        package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
