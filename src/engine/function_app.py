@@ -4,21 +4,19 @@ import pandas as pd
 import io
 import os
 import json
-
 import azure.functions as func
+from azure.storage.blob import BlobServiceClient
 
-# This creates the "Function App" object that we will use to define our functions
-app = func.FunctionApp()
 
 # --- Hardcoded values for the Tracer Bullet ---
 CONNECTION_STRING = os.environ.get("AzureWebJobsStorage")
 CONTAINER_NAME = "uploads"
 BLOB_NAME = "tracer_policies.csv"
 
+app = func.FunctionApp()
 
-# This is the v2 equivalent of function.json. It's a decorator!
 @app.function_name(name="HttpTrigger1")
-@app.route(route="HttpTrigger1", auth_level=func.AuthLevel.ANONYMOUS, methods=["get"])
+@app.route(route="func-vm22-tracer-engine", auth_level=func.AuthLevel.ANONYMOUS)
 def run_calculation(req: func.HttpRequest) -> func.HttpResponse:
     """
     This is our main calculation function. The decorators above tell Azure
@@ -31,7 +29,7 @@ def run_calculation(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         # 1. Connect to Azure Blob Storage and get the data
-        blob_service_client = func.blob.BlobServiceClient.from_connection_string(CONNECTION_STRING)
+        blob_service_client = BlobServiceClient.from_connection_string(CONNECTION_STRING)
         blob_client = blob_service_client.get_blob_client(container=CONTAINER_NAME, blob=BLOB_NAME)
         
         df = pd.read_csv(io.BytesIO(blob_client.download_blob().readall()))
