@@ -14,11 +14,7 @@ import numpy as np
 app = func.FunctionApp()
 
 @app.function_name(name="ProcessCalculationJob")
-@app.service_bus_queue_trigger(
-    arg_name="job_message",
-    connection="ServiceBusConnectionString",
-    queue_name="calculation-requests"
-)
+@app.service_bus_queue_trigger(arg_name="job_message",connection="ServiceBusConnectionString",queue_name="calculation-requests")
 def process_calculation_job(job_message: func.ServiceBusMessage):
     """
     This function is a background worker. It activates automatically
@@ -184,11 +180,7 @@ def http_ingest_scenarios(req: func.HttpRequest) -> func.HttpResponse:
 
 @app.function_name(name="HttpStartCalculation")
 @app.route(route="calculate/{product_code}", auth_level=func.AuthLevel.ANONYMOUS, methods=["post"])
-@app.service_bus_queue_output(
-    arg_name="job_message",
-    connection="ServiceBusConnectionString", # The name of our App Setting
-    queue_name="calculation-requests" # The name of the queue we created
-)
+@app.service_bus_queue_output(arg_name="job_message",connection="ServiceBusConnectionString", queue_name="calculation-requests")
 def http_start_calculation(req: func.HttpRequest, job_message: func.Out[str]) -> func.HttpResponse:
     """
     This function is triggered by the user. It does two things:
