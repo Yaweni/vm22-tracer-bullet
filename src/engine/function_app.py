@@ -8,107 +8,78 @@ import azure.functions as func
 from azure.storage.blob import BlobServiceClient
 from sqlalchemy import create_engine,text
 import urllib
+import numpy as np
 
-
-# --- Hardcoded values for the Tracer Bullet ---
-CONNECTION_STRING = os.environ.get("AzureWebJobsStorage")
-CONTAINER_NAME = "uploads"
-BLOB_NAME = "tracer_policies.csv"
 
 app = func.FunctionApp()
 
-@app.function_name(name="RunCalculation")
-@app.route(route="calculate/{product_code}", auth_level=func.AuthLevel.ANONYMOUS, methods=["post"])
-def run_calculation(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Python Monthly Calculation Engine triggered.')
-
-    product_code = req.route_params.get('product_code')
-    sql_connection_string = os.environ.get("SqlConnectionString")
+@app.function_name(name="ProcessCalculationJob")
+@app.service_bus_queue_trigger(
+    arg_name="job_message",
+    connection="ServiceBusConnectionString",
+    queue_name="calculation-requests"
+)
+def process_calculation_job(job_message: func.ServiceBusMessage):
+    """
+    This function is a background worker. It activates automatically
+    when a new message appears in the 'calculation-requests' queue.
+    """
+    # 1. Parse the incoming message
+    message_body = job_message.get_body().decode('utf-8')
+    job_data = json.loads(message_body)
+    job_id = job_data['job_id']
+    product_code = job_data['product_code']
     
-    if not product_code or not sql_connection_string:
-        return func.HttpResponse("Missing product_code or SQL connection string.", status_code=400)
+    logging.info(f"Python ServiceBus queue trigger processing job ID: {job_id} for product: {product_code}")
+
+    sql_connection_string = os.environ.get("SqlConnectionString")
+    params = urllib.parse.quote_plus(sql_connection_string)
+    engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
 
     try:
-        params = urllib.parse.quote_plus(sql_connection_string)
-        engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
-
         with engine.connect() as con:
-            # --- Setup and Data Loading ---
-            job_id = con.execute(text("INSERT INTO CalculationJobs (Product_Code, Job_Status) OUTPUT INSERTED.JobID VALUES (:pcode, 'Running')"), {"pcode": product_code}).scalar()
+            # --- Update job status to 'Running' ---
+            con.execute(text("UPDATE CalculationJobs SET Job_Status = 'Running' WHERE JobID = :jobid"), {"jobid": job_id})
             con.commit()
-
+            
+            # --- Data Loading (vectorized) ---
             policies_df = pd.read_sql(text("SELECT * FROM Policies WHERE Product_Code = :pcode"), con, params={"pcode": product_code})
             scenarios_df = pd.read_sql(text("SELECT * FROM EconomicScenarios"), con)
-            
-            if policies_df.empty:
-                return func.HttpResponse(f"No policies found for Product_Code: {product_code}", status_code=404)
-
-            # --- Monthly Deterministic Reserve (DR) Calculation ---
             dr_scenario = scenarios_df[scenarios_df['ScenarioID'] == 1].copy()
+            dr_scenario.set_index('Month', inplace=True)
 
-            PROJECTION_MONTHS = 360
-            MONTHLY_LAPSE_RATE = 0.05 / 12
-            MONTHLY_ACCOUNT_GROWTH = 0.03 / 12
+            PROJECTION_MONTHS, MONTHLY_LAPSE_RATE, MONTHLY_ACCOUNT_GROWTH = 360, 0.05 / 12, 0.03 / 12
             
-            total_present_value_of_claims = 0
+            num_policies = len(policies_df)
+            account_values = policies_df['Account_Value'].to_numpy(dtype=np.float64)
+            in_force_mask = np.ones(num_policies, dtype=np.float64)
+            total_pv_of_claims = np.zeros(num_policies, dtype=np.float64)
+            
+            # --- High-Performance Monthly DR Calculation Loop ---
+            discount_rates = (1 + dr_scenario['Rate_0_25_yr'].to_numpy())**(1/12) - 1
+            cumulative_discount_factors = np.cumprod(1 / (1 + discount_rates))
 
-            # Loop through each policy in the block
-            for index, policy in policies_df.iterrows():
-                current_av = policy['Account_Value']
-                
-                # =================================================================
-                #  CORRECTED DISCOUNTING LOGIC STARTS HERE
-                # =================================================================
-                
-                # This variable will accumulate the discount factor over time
-                cumulative_discount_factor = 1.0 
-                
-                # Project cash flows for this single policy, month by month
-                for month in range(1, PROJECTION_MONTHS + 1):
-                    # 1. Get the monthly discount rate for THIS specific month
-                    # We'll use the 10-year rate, converted to a monthly effective rate
-                    annual_rate = dr_scenario.loc[dr_scenario['Month'] == month, 'Rate_10_yr'].iloc[0]
-                    monthly_discount_rate = (1 + annual_rate)**(1/12) - 1
-                    
-                    # 2. Update the cumulative discount factor for this month
-                    # This is the key: we compound it period by period
-                    cumulative_discount_factor = cumulative_discount_factor / (1 + monthly_discount_rate)
-                    
-                    # 3. Calculate cash flows for this month
-                    account_growth = current_av * MONTHLY_ACCOUNT_GROWTH
-                    surrender_payout = current_av * MONTHLY_LAPSE_RATE
-                    
-                    # 4. Discount this month's payout back to today using the CUMULATIVE factor
-                    pv_of_payout = surrender_payout * cumulative_discount_factor
-                    total_present_value_of_claims += pv_of_payout
-                    
-                    # 5. Roll forward the account value for the next month
-                    current_av = (current_av + account_growth) * (1 - MONTHLY_LAPSE_RATE)
-
-                # =================================================================
-                #  CORRECTED DISCOUNTING LOGIC ENDS HERE
-                # =================================================================
-
-            final_reserve = total_present_value_of_claims
+            for month_idx in range(PROJECTION_MONTHS):
+                pv_of_payouts = (account_values * MONTHLY_LAPSE_RATE) * cumulative_discount_factors[month_idx]
+                total_pv_of_claims += pv_of_payouts * in_force_mask
+                account_values += account_values * MONTHLY_ACCOUNT_GROWTH
+                in_force_mask *= (1 - MONTHLY_LAPSE_RATE)
+            
+            final_reserve = np.sum(total_pv_of_claims)
 
             # --- Save Results and Finalize Job ---
-            # (The rest of the function remains the same)
             con.execute(text("INSERT INTO Results (JobID, Result_Type, Result_Value) VALUES (:jobid, 'Deterministic_Reserve_Monthly', :resval)"), {"jobid": job_id, "resval": final_reserve})
             con.execute(text("UPDATE CalculationJobs SET Job_Status = 'Complete', Completed_Timestamp = GETDATE() WHERE JobID = :jobid"), {"jobid": job_id})
             con.commit()
 
-        # --- Prepare final response ---
-        response_data = {
-            "job_id": job_id, "product_code": product_code,
-            "policies_processed": len(policies_df),
-            "calculated_reserve_dr_monthly": round(final_reserve, 2)
-        }
-        
-        return func.HttpResponse(body=json.dumps(response_data), mimetype="application/json", status_code=200)
+        logging.info(f"Successfully completed job ID: {job_id}")
 
     except Exception as e:
-        logging.error(f"Error during calculation for {product_code}: {e}")
-        return func.HttpResponse(f"Error during calculation: {e}", status_code=500)
+        logging.error(f"Job ID {job_id} failed with error: {e}")
+        # Update job status to 'Failed'
+        with engine.connect() as con:
+            con.execute(text("UPDATE CalculationJobs SET Job_Status = 'Failed' WHERE JobID = :jobid"), {"jobid": job_id})
+            con.commit()
 
 @app.function_name(name="HttpIngest")
 @app.route(route="ingest", auth_level=func.AuthLevel.ANONYMOUS, methods=["post"])
@@ -209,3 +180,54 @@ def http_ingest_scenarios(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logging.error(f"An error occurred during scenario ingestion: {e}", exc_info=True)
         return func.HttpResponse(f"Error during scenario ingestion: {e}", status_code=500)
+
+
+@app.function_name(name="HttpStartCalculation")
+@app.route(route="calculate/{product_code}", auth_level=func.AuthLevel.ANONYMOUS, methods=["post"])
+@app.service_bus_queue_output(
+    arg_name="job_message",
+    connection="ServiceBusConnectionString", # The name of our App Setting
+    queue_name="calculation-requests" # The name of the queue we created
+)
+def http_start_calculation(req: func.HttpRequest, job_message: func.Out[str]) -> func.HttpResponse:
+    """
+    This function is triggered by the user. It does two things:
+    1. Creates a Job log in the SQL database.
+    2. Puts a message on the queue to start the calculation.
+    """
+    logging.info('Python HTTP StartCalculation trigger processed a request.')
+    
+    product_code = req.route_params.get('product_code')
+    sql_connection_string = os.environ.get("SqlConnectionString")
+
+    if not product_code or not sql_connection_string:
+        return func.HttpResponse("Missing product_code or SQL connection string.", status_code=400)
+
+    try:
+        params = urllib.parse.quote_plus(sql_connection_string)
+        engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
+
+        with engine.connect() as con:
+            # Create a new job log with 'Pending' status
+            job_id = con.execute(text("INSERT INTO CalculationJobs (Product_Code, Job_Status) OUTPUT INSERTED.JobID VALUES (:pcode, 'Pending')"), {"pcode": product_code}).scalar()
+            con.commit()
+
+        # Create the message payload for the queue
+        message_body = json.dumps({
+            "job_id": job_id,
+            "product_code": product_code
+        })
+        
+        # Use the output binding to send the message to the queue
+        job_message.set(message_body)
+
+        # Return an immediate success response to the user
+        return func.HttpResponse(
+            body=json.dumps({"job_id": job_id, "status": "Job successfully queued."}),
+            mimetype="application/json",
+            status_code=202 # 202 Accepted is the correct code for an async job
+        )
+
+    except Exception as e:
+        logging.error(f"Error starting calculation for {product_code}: {e}")
+        return func.HttpResponse(f"Error queuing job: {e}", status_code=500)

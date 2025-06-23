@@ -1,5 +1,7 @@
 pandas==2.3.0
 azure-functions
+azure-functions-servicebus
 azure-storage-blob
 sqlalchemy
 pyodbc
+numpy
