@@ -1,6 +1,5 @@
 pandas
 azure-functions
-azure-functions-servicebus
 azure-storage-blob
 sqlalchemy
 pyodbc
