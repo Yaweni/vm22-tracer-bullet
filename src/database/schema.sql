@@ -25,3 +25,27 @@ CREATE TABLE Results (
     Result_Type NVARCHAR(50) NOT NULL, -- e.g., 'Deterministic_Reserve'
     Result_Value DECIMAL(18, 2) NOT NULL
 );
+
+
+-- New table to store the granular, monthly economic scenarios.
+CREATE TABLE EconomicScenarios (
+    ScenarioID INT NOT NULL,
+    Month INT NOT NULL, -- This is the projection month (1 to 360)
+    
+    -- Yield Curve Rates for different terms (in years)
+    Rate_0_25_yr DECIMAL(9, 8), -- The '0.25' column
+    Rate_0_5_yr DECIMAL(9, 8),  -- The '0.5' column
+    Rate_1_yr DECIMAL(9, 8),
+    Rate_2_yr DECIMAL(9, 8),
+    Rate_3_yr DECIMAL(9, 8),
+    Rate_5_yr DECIMAL(9, 8),
+    Rate_7_yr DECIMAL(9, 8),
+    Rate_10_yr DECIMAL(9, 8),   -- This will be our primary discount rate
+    Rate_20_yr DECIMAL(9, 8),
+    Rate_30_yr DECIMAL(9, 8),
+    
+    Load_Timestamp DATETIME DEFAULT GETDATE(),
+
+    -- Create a composite primary key to ensure each scenario-month is unique
+    PRIMARY KEY (ScenarioID, Month)
+);
