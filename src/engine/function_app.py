@@ -123,17 +123,10 @@ def http_ingest(req: func.HttpRequest) -> func.HttpResponse:
         logging.error(f"An error occurred during ingestion: {e}")
         return func.HttpResponse(f"Error during ingestion: {e}", status_code=500)
 
-# =================================================================
-#  ADD THIS NEW FUNCTION to 'function_app.py'
-# =================================================================
 
 @app.function_name(name="HttpIngestScenarios")
 @app.route(route="ingest-scenarios", auth_level=func.AuthLevel.ANONYMOUS, methods=["post"])
 def http_ingest_scenarios(req: func.HttpRequest) -> func.HttpResponse:
-    """
-    This function ingests the large, monthly economic scenario file (UST-Monthly.csv)
-    and loads it into the EconomicScenarios table.
-    """
     logging.info('Python HTTP Scenario Ingestion function triggered.')
 
     sql_connection_string = os.environ.get("SqlConnectionString")
@@ -142,27 +135,23 @@ def http_ingest_scenarios(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         csv_data = req.get_body()
-        
-        # Read the CSV data from the request body
-        df = pd.read_csv(io.BytesIO(csv_data))
 
-        # --- Data Cleansing and Renaming ---
-        # The first column name has a weird comment prefix, let's clean it up.
-        df.rename(columns={df.columns[0]: 'ScenarioID'}, inplace=True)
-        # Rename other columns to be valid SQL column names
-        df.rename(columns={
-            'Month': 'Month',
-            '0.25': 'Rate_0_25_yr',
-            '0.5': 'Rate_0_5_yr',
-            '1': 'Rate_1_yr',
-            '2': 'Rate_2_yr',
-            '3': 'Rate_3_yr',
-            '5': 'Rate_5_yr',
-            '7': 'Rate_7_yr',
-            '10': 'Rate_10_yr',
-            '20': 'Rate_20_yr',
-            '30': 'Rate_30_yr'
-        }, inplace=True)
+        # --- FIX 1: Define clean column names ---
+        # This list must be in the exact same order as the columns in your CSV file.
+        clean_column_names = [
+            'ScenarioID', 'Month', 'Rate_0_25_yr', 'Rate_0_5_yr', 'Rate_1_yr', 
+            'Rate_2_yr', 'Rate_3_yr', 'Rate_5_yr', 'Rate_7_yr', 'Rate_10_yr', 
+            'Rate_20_yr', 'Rate_30_yr'
+        ]
+
+        # Read the CSV. 
+        # `header=0` tells pandas to read the first row as the header.
+        # `encoding='utf-8-sig'` correctly handles the invisible BOM character (﻿) at the start of your file.
+        df = pd.read_csv(io.BytesIO(csv_data), encoding='utf-8-sig', header=0)
+        
+        # --- FIX 2: Replace the entire rename block with a direct assignment ---
+        # This is more robust than trying to rename individual columns.
+        df.columns = clean_column_names
 
         # Remove rows where Month is 0, as they are starting values, not projections
         df = df[df['Month'] > 0].copy()
@@ -174,17 +163,17 @@ def http_ingest_scenarios(req: func.HttpRequest) -> func.HttpResponse:
         with engine.connect() as connection:
             with connection.begin() as transaction:
                 try:
-                    # Execute the TRUNCATE command using the text() construct
-                    connection.execute(text("TRUNCATE TABLE Policies"))
+                    # --- FIX 3: Truncate the CORRECT table ---
+                    logging.info("Truncating existing data from EconomicScenarios table.")
+                    connection.execute(text("TRUNCATE TABLE EconomicScenarios"))
                     # The transaction will be automatically committed here if no errors occurred
                 except Exception as e:
-                    # If an error occurs, the transaction will be automatically rolled back
-                    logging.error(f"Failed to truncate table: {e}")
+                    logging.error(f"Failed to truncate table: {e}", exc_info=True)
                     transaction.rollback()
                     raise # Re-raise the exception to stop the function
 
-        # Load the cleaned data. Use a larger chunksize for big files.
-        df.to_sql('EconomicScenarios', con=engine, if_exists='append', index=False, chunksize=1000)
+        # Load the cleaned data.
+        df.to_sql('EconomicScenarios', con=engine, if_exists='append', index=False, chunksize=5000)
 
         return func.HttpResponse(
             body=f"Successfully ingested {len(df)} monthly scenario records.",
@@ -192,5 +181,5 @@ def http_ingest_scenarios(req: func.HttpRequest) -> func.HttpResponse:
         )
 
     except Exception as e:
-        logging.error(f"An error occurred during scenario ingestion: {e}")
+        logging.error(f"An error occurred during scenario ingestion: {e}", exc_info=True)
         return func.HttpResponse(f"Error during scenario ingestion: {e}", status_code=500)
