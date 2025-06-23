@@ -109,9 +109,6 @@ def http_ingest(req: func.HttpRequest) -> func.HttpResponse:
         params = urllib.parse.quote_plus(sql_connection_string)
         engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
 
-        with engine.connect() as con:
-            con.execute('TRUNCATE TABLE Policies')
-
         # Use Pandas' to_sql function to efficiently insert the data
         # 'if_exists="replace"' will clear the table and insert the new data.
         # This is better for our simple MVP workflow.
