@@ -20,61 +20,88 @@ app = func.FunctionApp()
 @app.function_name(name="RunCalculation")
 @app.route(route="calculate/{product_code}", auth_level=func.AuthLevel.ANONYMOUS, methods=["post"])
 def run_calculation(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Python Calculation Engine triggered.')
+    logging.info('Python Monthly Calculation Engine triggered.')
 
     product_code = req.route_params.get('product_code')
-    if not product_code:
-        return func.HttpResponse("Provide a product_code in the URL, like /api/calculate/SPDA_G3", status_code=400)
-
     sql_connection_string = os.environ.get("SqlConnectionString")
-    if not sql_connection_string:
-        return func.HttpResponse("FATAL: SqlConnectionString setting is missing.", status_code=500)
+    
+    if not product_code or not sql_connection_string:
+        return func.HttpResponse("Missing product_code or SQL connection string.", status_code=400)
 
     try:
         params = urllib.parse.quote_plus(sql_connection_string)
         engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
 
         with engine.connect() as con:
-            # Create a new job log
-            job_insert_query = text("INSERT INTO CalculationJobs (Product_Code, Job_Status) OUTPUT INSERTED.JobID VALUES (:pcode, 'Running')")
-            result = con.execute(job_insert_query, {"pcode": product_code})
-            job_id = result.scalar()
-            con.commit() # Using SQLAlchemy 2.0 style commit
+            # --- Setup and Data Loading ---
+            job_id = con.execute(text("INSERT INTO CalculationJobs (Product_Code, Job_Status) OUTPUT INSERTED.JobID VALUES (:pcode, 'Running')"), {"pcode": product_code}).scalar()
+            con.commit()
 
-            # Read policy data for the specified block
-            policy_query = text("SELECT * FROM Policies WHERE Product_Code = :pcode")
-            policies_df = pd.read_sql(policy_query, con, params={"pcode": product_code})
-
+            policies_df = pd.read_sql(text("SELECT * FROM Policies WHERE Product_Code = :pcode"), con, params={"pcode": product_code})
+            scenarios_df = pd.read_sql(text("SELECT * FROM EconomicScenarios"), con)
+            
             if policies_df.empty:
                 return func.HttpResponse(f"No policies found for Product_Code: {product_code}", status_code=404)
 
-            # --- Simplified Deterministic Reserve (DR) Calculation ---
-            PROJECTION_YEARS, DISCOUNT_RATE, LAPSE_RATE = 30, 0.04, 0.05
+            # --- Monthly Deterministic Reserve (DR) Calculation ---
+            dr_scenario = scenarios_df[scenarios_df['ScenarioID'] == 1].copy()
+
+            PROJECTION_MONTHS = 360
+            MONTHLY_LAPSE_RATE = 0.05 / 12
+            MONTHLY_ACCOUNT_GROWTH = 0.03 / 12
+            
             total_present_value_of_claims = 0
 
+            # Loop through each policy in the block
             for index, policy in policies_df.iterrows():
                 current_av = policy['Account_Value']
-                for year in range(1, PROJECTION_YEARS + 1):
-                    growth = current_av * 0.03
-                    payout = current_av * LAPSE_RATE
-                    pv_payout = payout / ((1 + DISCOUNT_RATE) ** year)
-                    total_present_value_of_claims += pv_payout
-                    current_av = (current_av + growth) * (1 - LAPSE_RATE)
-            
+                
+                # =================================================================
+                #  CORRECTED DISCOUNTING LOGIC STARTS HERE
+                # =================================================================
+                
+                # This variable will accumulate the discount factor over time
+                cumulative_discount_factor = 1.0 
+                
+                # Project cash flows for this single policy, month by month
+                for month in range(1, PROJECTION_MONTHS + 1):
+                    # 1. Get the monthly discount rate for THIS specific month
+                    # We'll use the 10-year rate, converted to a monthly effective rate
+                    annual_rate = dr_scenario.loc[dr_scenario['Month'] == month, 'Rate_10_yr'].iloc[0]
+                    monthly_discount_rate = (1 + annual_rate)**(1/12) - 1
+                    
+                    # 2. Update the cumulative discount factor for this month
+                    # This is the key: we compound it period by period
+                    cumulative_discount_factor = cumulative_discount_factor / (1 + monthly_discount_rate)
+                    
+                    # 3. Calculate cash flows for this month
+                    account_growth = current_av * MONTHLY_ACCOUNT_GROWTH
+                    surrender_payout = current_av * MONTHLY_LAPSE_RATE
+                    
+                    # 4. Discount this month's payout back to today using the CUMULATIVE factor
+                    pv_of_payout = surrender_payout * cumulative_discount_factor
+                    total_present_value_of_claims += pv_of_payout
+                    
+                    # 5. Roll forward the account value for the next month
+                    current_av = (current_av + account_growth) * (1 - MONTHLY_LAPSE_RATE)
+
+                # =================================================================
+                #  CORRECTED DISCOUNTING LOGIC ENDS HERE
+                # =================================================================
+
             final_reserve = total_present_value_of_claims
 
-            # Insert the result and update the job status
-            result_insert_query = text("INSERT INTO Results (JobID, Result_Type, Result_Value) VALUES (:jobid, 'Deterministic_Reserve', :resval)")
-            con.execute(result_insert_query, {"jobid": job_id, "resval": final_reserve})
-            job_update_query = text("UPDATE CalculationJobs SET Job_Status = 'Complete', Completed_Timestamp = GETDATE() WHERE JobID = :jobid")
-            con.execute(job_update_query, {"jobid": job_id})
+            # --- Save Results and Finalize Job ---
+            # (The rest of the function remains the same)
+            con.execute(text("INSERT INTO Results (JobID, Result_Type, Result_Value) VALUES (:jobid, 'Deterministic_Reserve_Monthly', :resval)"), {"jobid": job_id, "resval": final_reserve})
+            con.execute(text("UPDATE CalculationJobs SET Job_Status = 'Complete', Completed_Timestamp = GETDATE() WHERE JobID = :jobid"), {"jobid": job_id})
             con.commit()
 
+        # --- Prepare final response ---
         response_data = {
-            "job_id": job_id,
-            "product_code": product_code,
+            "job_id": job_id, "product_code": product_code,
             "policies_processed": len(policies_df),
-            "calculated_reserve_dr": round(final_reserve, 2)
+            "calculated_reserve_dr_monthly": round(final_reserve, 2)
         }
         
         return func.HttpResponse(body=json.dumps(response_data), mimetype="application/json", status_code=200)
@@ -82,7 +109,6 @@ def run_calculation(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logging.error(f"Error during calculation for {product_code}: {e}")
         return func.HttpResponse(f"Error during calculation: {e}", status_code=500)
-
 
 @app.function_name(name="HttpIngest")
 @app.route(route="ingest", auth_level=func.AuthLevel.ANONYMOUS, methods=["post"])
