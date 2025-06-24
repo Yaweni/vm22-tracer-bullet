@@ -151,9 +151,6 @@ def http_start_calculation(req: func.HttpRequest) -> func.HttpResponse:
         # 2. Get a client to interact with a specific queue
         queue_client = queue_service_client.get_queue_client(queue_name)
 
-        # 3. Create the queue if it doesn't already exist
-        queue_client.create_queue()
-
         # 4. Prepare the message payload
         message_body = json.dumps({
             "job_id": job_id,
