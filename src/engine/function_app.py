@@ -124,17 +124,43 @@ def http_ingest_scenarios(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.function_name("HttpStartOrchestrator")
-@app.route(route="calculate/{product_code}", methods=["POST"])
+@app.route(route="calculate", methods=["POST"])
 @app.durable_client_input(client_name="client")
 def http_start_orchestrator(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
-    """The user's entry point. Starts the orchestration and returns immediately."""
-    product_code = req.route_params.get('product_code')
-    if not product_code:
-        return func.HttpResponse("Please provide a product_code.", status_code=400)
+    """
+    The user's entry point. Reads input from the request body,
+    starts the orchestration, and returns immediately.
+    """
+    logging.info("HTTP orchestrator starter trigger processed a request.")
 
+    # --- Get product_code from the request body ---
+    try:
+        # req.get_json() is a convenient way to parse the body as JSON.
+        # It raises a ValueError if the body is not valid JSON.
+        req_body = req.get_json()
+        product_code = req_body.get('product_code')
+    except ValueError:
+        logging.error("Invalid JSON received in request body.")
+        return func.HttpResponse(
+             "Request body must be valid JSON.",
+             status_code=400
+        )
+
+    # Check if 'product_code' key was present in the JSON
+    if not product_code:
+        return func.HttpResponse(
+             "Please provide 'product_code' in the JSON request body.",
+             status_code=400
+        )
+
+    # --- Start the orchestration ---
     orchestrator_input = {"product_code": product_code}
+
     instance_id = client.start_new("CalculationOrchestrator", client_input=orchestrator_input)
     logging.info(f"Started orchestration with ID = '{instance_id}'.")
+    
+    # This creates the standard HTTP 202 response with location headers
+    # for checking the status of the orchestration.
     return client.create_check_status_response(req, instance_id)
 
 # --- 2b. The "ORCHESTRATOR" Function (The Project Manager) ---
