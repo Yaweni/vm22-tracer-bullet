@@ -14,7 +14,7 @@ import numpy as np
 app = func.FunctionApp()
 
 @app.function_name(name="ProcessCalculationJob")
-@app.service_bus_queue_trigger(arg_name="job_message",connection="ServiceBusConnectionString",queue_name="calculation-requests")
+@app.queue_trigger(arg_name="job_message",connection="AzureJobsWebStorage",queue_name="calculation-requests")
 def process_calculation_job(job_message: func.ServiceBusMessage):
     """
     This function is a background worker. It activates automatically
@@ -180,13 +180,8 @@ def http_ingest_scenarios(req: func.HttpRequest) -> func.HttpResponse:
 
 @app.function_name(name="HttpStartCalculation")
 @app.route(route="calculate/{product_code}", auth_level=func.AuthLevel.ANONYMOUS, methods=["post"])
-@app.service_bus_queue_output(arg_name="job_message",connection="ServiceBusConnectionString", queue_name="calculation-requests")
+@app.queue_output(arg_name="job_message",connection="AzureWebJobsStorage",  queue_name="calculation-requests")
 def http_start_calculation(req: func.HttpRequest, job_message: func.Out[str]) -> func.HttpResponse:
-    """
-    This function is triggered by the user. It does two things:
-    1. Creates a Job log in the SQL database.
-    2. Puts a message on the queue to start the calculation.
-    """
     logging.info('Python HTTP StartCalculation trigger processed a request.')
     
     product_code = req.route_params.get('product_code')
@@ -200,26 +195,17 @@ def http_start_calculation(req: func.HttpRequest, job_message: func.Out[str]) ->
         engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
 
         with engine.connect() as con:
-            # Create a new job log with 'Pending' status
             job_id = con.execute(text("INSERT INTO CalculationJobs (Product_Code, Job_Status) OUTPUT INSERTED.JobID VALUES (:pcode, 'Pending')"), {"pcode": product_code}).scalar()
             con.commit()
 
-        # Create the message payload for the queue
-        message_body = json.dumps({
-            "job_id": job_id,
-            "product_code": product_code
-        })
-        
-        # Use the output binding to send the message to the queue
+        message_body = json.dumps({ "job_id": job_id, "product_code": product_code })
         job_message.set(message_body)
 
-        # Return an immediate success response to the user
         return func.HttpResponse(
             body=json.dumps({"job_id": job_id, "status": "Job successfully queued."}),
             mimetype="application/json",
-            status_code=202 # 202 Accepted is the correct code for an async job
+            status_code=202
         )
-
     except Exception as e:
         logging.error(f"Error starting calculation for {product_code}: {e}")
         return func.HttpResponse(f"Error queuing job: {e}", status_code=500)
