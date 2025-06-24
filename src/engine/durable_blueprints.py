@@ -14,7 +14,7 @@ bp = df.Blueprint(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 
 @bp.route(route="process_policies", methods=["POST"])
-@bp.durable_client_input(client_name="client")
+@bp.durable_client_input(client_name="client",connection_name="AzureWebJobsStorage")
 async def start_orchestrator(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
     """
     The user's entry point. Reads input from the request body,
@@ -26,20 +26,20 @@ async def start_orchestrator(req: func.HttpRequest, client: df.DurableOrchestrat
     try:
         # req.get_json() is a convenient way to parse the body as JSON.
         # It raises a ValueError if the body is not valid JSON.
-        #req_body = req.route_params.get("product_code") 
-        #product_code = req_body.get('product_code')
-        product_code = req.route_params.get("product_code") 
+        req_body = req.get_json()
+        product_code = req_body.get('product_code')
+        
     except ValueError:
         logging.error("Invalid parameter received in request body.")
         return func.HttpResponse(
-             "Product code is missing or invalid in the request parameters.",
+             "Product code is missing or invalid in the request body.",
              status_code=400
         )
 
     # Check if 'product_code' key was present in the JSON
     if not product_code:
         return func.HttpResponse(
-             "Please provide 'product_code' in the request parameters.",
+             "Please provide 'product_code' in the request body.",
              status_code=400
         )
 
