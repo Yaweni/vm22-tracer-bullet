@@ -124,7 +124,7 @@ def http_ingest_scenarios(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.function_name("HttpStartOrchestrator")
-@app.route(route="calculate", methods=["POST"])
+@app.route(route="calculate",auth_level=func.AuthLevel.ANONYMOUS, methods=["POST"])
 @app.durable_client_input(client_name="client")
 def http_start_orchestrator(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
     """
