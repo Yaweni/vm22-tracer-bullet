@@ -13,7 +13,7 @@ import numpy as np
 bp = df.Blueprint(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 
-@bp.route(route="process_policies", methods=["POST"])
+@bp.route(route="process_policies", methods=["POST","GET"])
 @bp.durable_client_input(client_name="client",connection_name="AzureWebJobsStorage")
 async def start_orchestrator(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
     """
