@@ -127,41 +127,44 @@ def http_ingest_scenarios(req: func.HttpRequest) -> func.HttpResponse:
 def http_start_calculation(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP StartCalculation trigger processed a request.')
     
+    # In a real app with login, we would get the user ID from the request token.
+    # For the MVP, we will hardcode a test user ID.
+    user_id = "solo_actuary_01" 
+    
     product_code = req.route_params.get('product_code')
     sql_connection_string = os.environ.get("SqlConnectionString")
-    # We will now use the main storage connection string to send the message
-    storage_connection_string = os.environ.get("AzureWebJobsStorage")
+    # We now use our new, explicit setting name
+    queue_connection_string = os.environ.get("QueueConnectionString") 
     queue_name = "calculation-requests"
 
-    if not all([product_code, sql_connection_string, storage_connection_string]):
+    if not all([product_code, sql_connection_string, queue_connection_string]):
         return func.HttpResponse("FATAL: Missing required application settings.", status_code=500)
 
     try:
-        # --- Create Job Log in SQL (Same as before) ---
         params = urllib.parse.quote_plus(sql_connection_string)
         engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
+
         with engine.connect() as con:
-            job_id = con.execute(text("INSERT INTO CalculationJobs (Product_Code, Job_Status) OUTPUT INSERTED.JobID VALUES (:pcode, 'Pending')"), {"pcode": product_code}).scalar()
+            # We now log the user ID with the job
+            job_id = con.execute(
+                text("INSERT INTO CalculationJobs (Product_Code, Job_Status, UserID) OUTPUT INSERTED.JobID VALUES (:pcode, 'Pending', :uid)"),
+                {"pcode": product_code, "uid": user_id}
+            ).scalar()
             con.commit()
 
-        # --- Manually Send Message to Queue Storage ---
-        # 1. Create a client to connect to the queue service
-        queue_service_client = QueueServiceClient.from_connection_string(storage_connection_string)
-        
-        # 2. Get a client to interact with a specific queue
-        queue_client = queue_service_client.get_queue_client(queue_name)
-
-        # 4. Prepare the message payload
+        # Add the userId to the message payload
         message_body = json.dumps({
             "job_id": job_id,
-            "product_code": product_code
+            "product_code": product_code,
+            "user_id": user_id 
         })
-
-        # 5. Send the message!
+        
+        queue_service_client = QueueServiceClient.from_connection_string(queue_connection_string)
+        queue_client = queue_service_client.get_queue_client(queue_name)
         queue_client.send_message(message_body)
+        
         logging.info(f"Successfully sent message for Job ID: {job_id} to queue '{queue_name}'.")
 
-        # --- Return immediate success to the user ---
         return func.HttpResponse(
             body=json.dumps({"job_id": job_id, "status": "Job successfully queued."}),
             mimetype="application/json",
@@ -175,10 +178,11 @@ def http_start_calculation(req: func.HttpRequest) -> func.HttpResponse:
 
 
 
+
 @app.function_name(name="ProcessCalculationJob")
 @app.queue_trigger(
     arg_name="job_message",
-    connection="AzureWebJobsStorage",
+    connection="QueueConnectionString",
     queue_name="calculation-requests"
 )
 def process_calculation_job(job_message: func.QueueMessage):
@@ -190,12 +194,11 @@ def process_calculation_job(job_message: func.QueueMessage):
     job_data = json.loads(message_body)
     job_id = job_data['job_id']
     product_code = job_data['product_code']
+    user_id = job_data.get('user_id') # We get the user_id but don't use it yet
     
     logging.info(f"Python Queue trigger processing job ID: {job_id} for product: {product_code}")
+    
 
-    # The rest of the calculation logic is IDENTICAL to the Service Bus version.
-    # No changes are needed from here down.
-    # ... (paste the entire try/except block from the previous version) ...
     sql_connection_string = os.environ.get("SqlConnectionString")
     params = urllib.parse.quote_plus(sql_connection_string)
     engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")

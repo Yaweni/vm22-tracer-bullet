@@ -15,7 +15,7 @@ CREATE TABLE Policies (
 CREATE TABLE CalculationJobs (
     JobID INT IDENTITY(1,1) PRIMARY KEY, Product_Code NVARCHAR(50) NOT NULL,
     AssumptionSetID NVARCHAR(50), Job_Status NVARCHAR(20) NOT NULL,
-    Requested_Timestamp DATETIME DEFAULT GETDATE(), Completed_Timestamp DATETIME
+    Requested_Timestamp DATETIME DEFAULT GETDATE(), Completed_Timestamp DATETIME, UserID NVARCHAR(100) NOT NULL
 );
 
 -- 3. The Results table: Stores the final output of each calculation.
