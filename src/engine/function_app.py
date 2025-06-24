@@ -121,38 +121,59 @@ def http_ingest_scenarios(req: func.HttpRequest) -> func.HttpResponse:
 
 
 
-@app.queue_output(arg_name="job_message",connection="AzureWebJobsStorage",  queue_name="calculation-requests")
+
 @app.function_name(name="HttpStartCalculation")
 @app.route(route="calculate/{product_code}", auth_level=func.AuthLevel.ANONYMOUS, methods=["post"])
-def http_start_calculation(req: func.HttpRequest, job_message: func.Out[str]) -> func.HttpResponse:
+def http_start_calculation(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP StartCalculation trigger processed a request.')
     
     product_code = req.route_params.get('product_code')
     sql_connection_string = os.environ.get("SqlConnectionString")
+    # We will now use the main storage connection string to send the message
+    storage_connection_string = os.environ.get("AzureWebJobsStorage")
+    queue_name = "calculation-requests"
 
-    if not product_code or not sql_connection_string:
-        return func.HttpResponse("Missing product_code or SQL connection string.", status_code=400)
+    if not all([product_code, sql_connection_string, storage_connection_string]):
+        return func.HttpResponse("FATAL: Missing required application settings.", status_code=500)
 
     try:
+        # --- Create Job Log in SQL (Same as before) ---
         params = urllib.parse.quote_plus(sql_connection_string)
         engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
-
         with engine.connect() as con:
             job_id = con.execute(text("INSERT INTO CalculationJobs (Product_Code, Job_Status) OUTPUT INSERTED.JobID VALUES (:pcode, 'Pending')"), {"pcode": product_code}).scalar()
             con.commit()
 
-        message_body = json.dumps({ "job_id": job_id, "product_code": product_code })
-        job_message.set(message_body)
+        # --- Manually Send Message to Queue Storage ---
+        # 1. Create a client to connect to the queue service
+        queue_service_client = QueueServiceClient.from_connection_string(storage_connection_string)
+        
+        # 2. Get a client to interact with a specific queue
+        queue_client = queue_service_client.get_queue_client(queue_name)
 
+        # 3. Create the queue if it doesn't already exist
+        queue_client.create_queue()
+
+        # 4. Prepare the message payload
+        message_body = json.dumps({
+            "job_id": job_id,
+            "product_code": product_code
+        })
+
+        # 5. Send the message!
+        queue_client.send_message(message_body)
+        logging.info(f"Successfully sent message for Job ID: {job_id} to queue '{queue_name}'.")
+
+        # --- Return immediate success to the user ---
         return func.HttpResponse(
             body=json.dumps({"job_id": job_id, "status": "Job successfully queued."}),
             mimetype="application/json",
             status_code=202
         )
+
     except Exception as e:
         logging.error(f"Error starting calculation for {product_code}: {e}")
         return func.HttpResponse(f"Error queuing job: {e}", status_code=500)
-
 
 
 
