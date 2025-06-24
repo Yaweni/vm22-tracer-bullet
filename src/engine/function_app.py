@@ -12,7 +12,7 @@ from azure.storage.blob import BlobServiceClient
 from azure.storage.queue import QueueServiceClient
 import azure.durable_functions as df
 
-app = df.DFApp()
+app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 
 
