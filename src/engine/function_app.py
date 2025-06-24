@@ -15,9 +15,6 @@ import azure.durable_functions as df
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 
-
-
-
 @app.function_name(name="HttpIngest")
 @app.route(route="ingest/policies", auth_level=func.AuthLevel.ANONYMOUS, methods=["post"])
 def http_ingest(req: func.HttpRequest) -> func.HttpResponse:
@@ -56,8 +53,6 @@ def http_ingest(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logging.error(f"An error occurred during ingestion: {e}")
         return func.HttpResponse(f"Error during ingestion: {e}", status_code=500)
-
-
 
 
 @app.function_name(name="HttpIngestScenarios")
@@ -123,10 +118,10 @@ def http_ingest_scenarios(req: func.HttpRequest) -> func.HttpResponse:
 
 
 
-@app.function_name("HttpStartOrchestrator")
-@app.route(route="calculate",auth_level=func.AuthLevel.ANONYMOUS, methods=["POST"])
+@app.function_name("http_process_policies_orchestrator")
+@app.route(route="process_policies",auth_level=func.AuthLevel.ANONYMOUS, methods=["POST"])
 @app.durable_client_input(client_name="client")
-def http_start_orchestrator(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
+def http_process_policies_orchestrator(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
     """
     The user's entry point. Reads input from the request body,
     starts the orchestration, and returns immediately.
