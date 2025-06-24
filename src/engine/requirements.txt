@@ -1,6 +1,7 @@
 pandas
 azure-functions
 azure-storage-blob
+azure-storage-queue
 sqlalchemy
 pyodbc
 numpy

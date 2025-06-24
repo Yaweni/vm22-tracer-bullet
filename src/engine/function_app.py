@@ -5,77 +5,17 @@ import io
 import os
 import json
 import azure.functions as func
-from azure.storage.blob import BlobServiceClient
 from sqlalchemy import create_engine,text
 import urllib
 import numpy as np
+from azure.storage.blob import BlobServiceClient
 
 
 app = func.FunctionApp()
 
-@app.function_name(name="ProcessCalculationJob")
-@app.queue_trigger(arg_name="job_message",connection="AzureJobsWebStorage",queue_name="calculation-requests")
-def process_calculation_job(job_message: func.ServiceBusMessage):
-    """
-    This function is a background worker. It activates automatically
-    when a new message appears in the 'calculation-requests' queue.
-    """
-    # 1. Parse the incoming message
-    message_body = job_message.get_body().decode('utf-8')
-    job_data = json.loads(message_body)
-    job_id = job_data['job_id']
-    product_code = job_data['product_code']
-    
-    logging.info(f"Python ServiceBus queue trigger processing job ID: {job_id} for product: {product_code}")
 
-    sql_connection_string = os.environ.get("SqlConnectionString")
-    params = urllib.parse.quote_plus(sql_connection_string)
-    engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
 
-    try:
-        with engine.connect() as con:
-            # --- Update job status to 'Running' ---
-            con.execute(text("UPDATE CalculationJobs SET Job_Status = 'Running' WHERE JobID = :jobid"), {"jobid": job_id})
-            con.commit()
-            
-            # --- Data Loading (vectorized) ---
-            policies_df = pd.read_sql(text("SELECT * FROM Policies WHERE Product_Code = :pcode"), con, params={"pcode": product_code})
-            scenarios_df = pd.read_sql(text("SELECT * FROM EconomicScenarios"), con)
-            dr_scenario = scenarios_df[scenarios_df['ScenarioID'] == 1].copy()
-            dr_scenario.set_index('Month', inplace=True)
 
-            PROJECTION_MONTHS, MONTHLY_LAPSE_RATE, MONTHLY_ACCOUNT_GROWTH = 360, 0.05 / 12, 0.03 / 12
-            
-            num_policies = len(policies_df)
-            account_values = policies_df['Account_Value'].to_numpy(dtype=np.float64)
-            in_force_mask = np.ones(num_policies, dtype=np.float64)
-            total_pv_of_claims = np.zeros(num_policies, dtype=np.float64)
-            
-            # --- High-Performance Monthly DR Calculation Loop ---
-            discount_rates = (1 + dr_scenario['Rate_0_25_yr'].to_numpy())**(1/12) - 1
-            cumulative_discount_factors = np.cumprod(1 / (1 + discount_rates))
-
-            for month_idx in range(PROJECTION_MONTHS):
-                pv_of_payouts = (account_values * MONTHLY_LAPSE_RATE) * cumulative_discount_factors[month_idx]
-                total_pv_of_claims += pv_of_payouts * in_force_mask
-                account_values += account_values * MONTHLY_ACCOUNT_GROWTH
-                in_force_mask *= (1 - MONTHLY_LAPSE_RATE)
-            
-            final_reserve = np.sum(total_pv_of_claims)
-
-            # --- Save Results and Finalize Job ---
-            con.execute(text("INSERT INTO Results (JobID, Result_Type, Result_Value) VALUES (:jobid, 'Deterministic_Reserve_Monthly', :resval)"), {"jobid": job_id, "resval": final_reserve})
-            con.execute(text("UPDATE CalculationJobs SET Job_Status = 'Complete', Completed_Timestamp = GETDATE() WHERE JobID = :jobid"), {"jobid": job_id})
-            con.commit()
-
-        logging.info(f"Successfully completed job ID: {job_id}")
-
-    except Exception as e:
-        logging.error(f"Job ID {job_id} failed with error: {e}")
-        # Update job status to 'Failed'
-        with engine.connect() as con:
-            con.execute(text("UPDATE CalculationJobs SET Job_Status = 'Failed' WHERE JobID = :jobid"), {"jobid": job_id})
-            con.commit()
 
 @app.function_name(name="HttpIngest")
 @app.route(route="ingest", auth_level=func.AuthLevel.ANONYMOUS, methods=["post"])
@@ -115,6 +55,8 @@ def http_ingest(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logging.error(f"An error occurred during ingestion: {e}")
         return func.HttpResponse(f"Error during ingestion: {e}", status_code=500)
+
+
 
 
 @app.function_name(name="HttpIngestScenarios")
@@ -178,9 +120,10 @@ def http_ingest_scenarios(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(f"Error during scenario ingestion: {e}", status_code=500)
 
 
+
+@app.queue_output(arg_name="job_message",connection="AzureWebJobsStorage",  queue_name="calculation-requests")
 @app.function_name(name="HttpStartCalculation")
 @app.route(route="calculate/{product_code}", auth_level=func.AuthLevel.ANONYMOUS, methods=["post"])
-@app.queue_output(arg_name="job_message",connection="AzureWebJobsStorage",  queue_name="calculation-requests")
 def http_start_calculation(req: func.HttpRequest, job_message: func.Out[str]) -> func.HttpResponse:
     logging.info('Python HTTP StartCalculation trigger processed a request.')
     
@@ -209,3 +152,63 @@ def http_start_calculation(req: func.HttpRequest, job_message: func.Out[str]) ->
     except Exception as e:
         logging.error(f"Error starting calculation for {product_code}: {e}")
         return func.HttpResponse(f"Error queuing job: {e}", status_code=500)
+
+
+
+
+
+@app.function_name(name="ProcessCalculationJob")
+@app.queue_trigger(
+    arg_name="job_message",
+    connection="AzureWebJobsStorage",
+    queue_name="calculation-requests"
+)
+def process_calculation_job(job_message: func.QueueMessage):
+    """
+    This function is a background worker. It activates automatically
+    when a new message appears in the 'calculation-requests' queue.
+    """
+    message_body = job_message.get_body().decode('utf-8')
+    job_data = json.loads(message_body)
+    job_id = job_data['job_id']
+    product_code = job_data['product_code']
+    
+    logging.info(f"Python Queue trigger processing job ID: {job_id} for product: {product_code}")
+
+    # The rest of the calculation logic is IDENTICAL to the Service Bus version.
+    # No changes are needed from here down.
+    # ... (paste the entire try/except block from the previous version) ...
+    sql_connection_string = os.environ.get("SqlConnectionString")
+    params = urllib.parse.quote_plus(sql_connection_string)
+    engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
+    try:
+        with engine.connect() as con:
+            con.execute(text("UPDATE CalculationJobs SET Job_Status = 'Running' WHERE JobID = :jobid"), {"jobid": job_id})
+            con.commit()
+            policies_df = pd.read_sql(text("SELECT * FROM Policies WHERE Product_Code = :pcode"), con, params={"pcode": product_code})
+            scenarios_df = pd.read_sql(text("SELECT * FROM EconomicScenarios"), con)
+            dr_scenario = scenarios_df[scenarios_df['ScenarioID'] == 1].copy()
+            dr_scenario.set_index('Month', inplace=True)
+            PROJECTION_MONTHS, MONTHLY_LAPSE_RATE, MONTHLY_ACCOUNT_GROWTH = 360, 0.05 / 12, (1+0.03)**(1/12) -1
+            num_policies = len(policies_df)
+            account_values = policies_df['Account_Value'].to_numpy(dtype=np.float64)
+            in_force_mask = np.ones(num_policies, dtype=np.float64)
+            total_pv_of_claims = np.zeros(num_policies, dtype=np.float64)
+            discount_rates = (1 + dr_scenario['Rate_0_25_yr'].to_numpy())**(1/12) - 1
+            cumulative_discount_factors = np.cumprod(1 / (1 + discount_rates))
+            for month_idx in range(PROJECTION_MONTHS):
+                pv_of_payouts = (account_values * MONTHLY_LAPSE_RATE) * cumulative_discount_factors[month_idx]
+                total_pv_of_claims += pv_of_payouts * in_force_mask
+                account_values += account_values * MONTHLY_ACCOUNT_GROWTH
+                in_force_mask *= (1 - MONTHLY_LAPSE_RATE)
+            final_reserve = np.sum(total_pv_of_claims)
+            con.execute(text("INSERT INTO Results (JobID, Result_Type, Result_Value) VALUES (:jobid, 'Deterministic_Reserve_Monthly', :resval)"), {"jobid": job_id, "resval": final_reserve})
+            con.execute(text("UPDATE CalculationJobs SET Job_Status = 'Complete', Completed_Timestamp = GETDATE() WHERE JobID = :jobid"), {"jobid": job_id})
+            con.commit()
+        logging.info(f"Successfully completed job ID: {job_id}")
+    except Exception as e:
+        logging.error(f"Job ID {job_id} failed with error: {e}")
+        with engine.connect() as con:
+            con.execute(text("UPDATE CalculationJobs SET Job_Status = 'Failed' WHERE JobID = :jobid"), {"jobid": job_id})
+            con.commit()
+
