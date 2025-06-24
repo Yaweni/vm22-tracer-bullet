@@ -9,7 +9,7 @@ from sqlalchemy import create_engine,text
 import urllib
 import numpy as np
 from azure.storage.blob import BlobServiceClient
-
+from azure.storage.queue import QueueServiceClient
 
 app = func.FunctionApp()
 
