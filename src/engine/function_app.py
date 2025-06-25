@@ -115,9 +115,3 @@ def http_ingest_scenarios(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logging.error(f"An error occurred during scenario ingestion: {e}", exc_info=True)
         return func.HttpResponse(f"Error during scenario ingestion: {e}", status_code=500)
-
-
-
-
-#@app.function_name("http_process_policies_orchestrator")
-
