@@ -16,9 +16,9 @@ from durable_blueprints import bp
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 app.register_functions(bp)
 
-@app.function_name(name="HttpIngest")
-@app.route(route="ingest/policies", auth_level=func.AuthLevel.ANONYMOUS, methods=["post"])
-def http_ingest(req: func.HttpRequest) -> func.HttpResponse:
+@app.function_name(name="HttpIngestPolicyCsv")
+@app.route(route="ingest/policies/csv", auth_level=func.AuthLevel.ANONYMOUS, methods=["post"])
+def http_ingest_policy_csv(req: func.HttpRequest) -> func.HttpResponse:
     """
     This v2 function ingests policy data from a CSV POST request
     and loads it into the Azure SQL database.
@@ -54,6 +54,39 @@ def http_ingest(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logging.error(f"An error occurred during ingestion: {e}")
         return func.HttpResponse(f"Error during ingestion: {e}", status_code=500)
+
+
+@app.function_name(name="HttpIngestPolicyJson")
+@app.route(route="ingest/policies/json", auth_level=func.AuthLevel.ANONYMOUS, methods=["post"])
+def http_ingest_policy_json(req: func.HttpRequest) -> func.HttpResponse:
+    """Ingests policy data from a JSON POST request into the SQL database."""
+    logging.info('Python HTTP JSON Policy Ingestion function triggered.')
+    
+    sql_connection_string = os.environ.get("SqlConnectionString")
+    if not sql_connection_string:
+        return func.HttpResponse("FATAL: SqlConnectionString setting is missing.", status_code=500)
+
+    try:
+        # Get the JSON data from the body of the POST request
+        json_data = req.get_json()
+        
+        # Use Pandas to convert the list of JSON objects into a DataFrame
+        # We assume the JSON is a list of records, e.g., [{"Policy_ID": "A", ...}, {"Policy_ID": "B", ...}]
+        df = pd.DataFrame(json_data)
+        
+        # The rest of the logic is identical to the CSV ingest function
+        params = urllib.parse.quote_plus(sql_connection_string)
+        engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
+
+        df.to_sql('Policies', con=engine, if_exists='replace', index=False, chunksize=1000)
+
+        return func.HttpResponse(
+            body=f"Successfully ingested and replaced {len(df)} policy records from JSON.",
+            status_code=200
+        )
+    except Exception as e:
+        return func.HttpResponse(f"Error during JSON ingestion: {e}", status_code=500)
+
 
 
 @app.function_name(name="HttpIngestScenarios")
@@ -115,3 +148,67 @@ def http_ingest_scenarios(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logging.error(f"An error occurred during scenario ingestion: {e}", exc_info=True)
         return func.HttpResponse(f"Error during scenario ingestion: {e}", status_code=500)
+
+@app.function_name(name="HttpGetJobs")
+@app.route(route="jobs", auth_level=func.AuthLevel.ANONYMOUS, methods=["get"])
+def http_get_jobs(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    This function retrieves the calculation job history from the SQL database.
+    In V2, this would be filtered by UserID.
+    """
+    logging.info('Request for job history received.')
+    
+    sql_connection_string = os.environ.get("SqlConnectionString")
+    if not sql_connection_string:
+        return func.HttpResponse("FATAL: SqlConnectionString setting is missing.", status_code=500)
+
+    try:
+        params = urllib.parse.quote_plus(sql_connection_string)
+        engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
+        
+        with engine.connect() as con:
+            # Get the top 50 most recent jobs
+            query = text("SELECT TOP 50 JobID, Product_Code, Job_Status, Requested_Timestamp, Completed_Timestamp FROM CalculationJobs ORDER BY JobID DESC")
+            jobs_df = pd.read_sql(query, con)
+        
+        # Convert DataFrame to JSON and return
+        jobs_json = jobs_df.to_json(orient='records', date_format='iso')
+        
+        return func.HttpResponse(
+            body=jobs_json,
+            mimetype="application/json",
+            status_code=200
+        )
+    except Exception as e:
+        return func.HttpResponse(f"Error fetching job history: {e}", status_code=500)
+    
+
+@app.function_name(name="HttpGetEmbedToken")
+@app.route(route="get-embed-token", auth_level=func.AuthLevel.ANONYMOUS, methods=["get"])
+def http_get_embed_token(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    This function will generate and return a secure embed token for Power BI.
+    For the MVP, we can return placeholder data.
+    The real implementation will involve using the Power BI REST API.
+    """
+    logging.info('Request for Power BI embed token received.')
+    
+    # In a real implementation, you would:
+    # 1. Authenticate using a Service Principal.
+    # 2. Call the Power BI API to get an embed token for a specific report/dataset.
+    # 3. Return that token to the client.
+    
+    # For now, return a placeholder to allow UI development.
+    placeholder_config = {
+        "type": "report",
+        "tokenType": "Embed",
+        "accessToken": "FAKE_TOKEN_FOR_DEVELOPMENT",
+        "embedUrl": "https://app.powerbi.com/reportEmbed?reportId=FAKE_REPORT_ID",
+        "id": "FAKE_REPORT_ID"
+    }
+
+    return func.HttpResponse(
+        body=json.dumps(placeholder_config),
+        mimetype="application/json",
+        status_code=200
+    )

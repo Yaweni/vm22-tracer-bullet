@@ -13,44 +13,44 @@ import numpy as np
 bp = df.Blueprint(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 
-@bp.route(route="process_policies", methods=["POST","GET"])
+@bp.function_name("HttpStartOrchestrator")
+@bp.route(route="calculate", methods=["POST"])
 @bp.durable_client_input(client_name="client",connection_name="AzureWebJobsStorage")
-async def start_orchestrator(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
+def http_start_orchestrator(req: func.HttpRequest, client: df.DurableOrchestrationClient) -> func.HttpResponse:
     """
-    The user's entry point. Reads input from the request body,
-    starts the orchestration, and returns immediately.
+    The user's entry point. It now receives a complex JSON body describing the job.
     """
-    logging.info("HTTP orchestrator starter trigger processed a request.")
-
-    # --- Get product_code from the request body ---
-    try:
-        # req.get_json() is a convenient way to parse the body as JSON.
-        # It raises a ValueError if the body is not valid JSON.
-        req_body = req.get_json()
-        product_code = req_body.get('product_code')
-        
-    except ValueError:
-        logging.error("Invalid parameter received in request body.")
-        return func.HttpResponse(
-             "Product code is missing or invalid in the request body.",
-             status_code=400
-        )
-
-    # Check if 'product_code' key was present in the JSON
-    if not product_code:
-        return func.HttpResponse(
-             "Please provide 'product_code' in the request body.",
-             status_code=400
-        )
-
-    # --- Start the orchestration ---
-    orchestrator_input = {"product_code": product_code}
-
-    instance_id = await client.start_new("CalculationOrchestrator", client_input=orchestrator_input)
-    logging.info(f"Started orchestration with ID = '{instance_id}'.")
+    logging.info('Complex calculation request received.')
     
-    # This creates the standard HTTP 202 response with location headers
-    # for checking the status of the orchestration.
+    try:
+        # The UI will now send a JSON body with all the options
+        job_request = req.get_json()
+    except ValueError:
+        return func.HttpResponse("Invalid JSON request body.", status_code=400)
+
+    # --- Extract all the new options from the request ---
+    product_codes = job_request.get("product_codes") # This is now a list
+    calculate_stochastic = job_request.get("calculate_stochastic", False) # Default to False
+    perform_attribution = job_request.get("perform_attribution", False) # Default to False
+    assumptions_text = job_request.get("assumptions_text") # The text from the user
+    # assumption_file would be handled here too if a file is uploaded
+
+    if not product_codes or not isinstance(product_codes, list):
+        return func.HttpResponse("Please provide a list of 'product_codes'.", status_code=400)
+
+    # The Orchestrator input is now much richer
+    orchestrator_input = {
+        "product_codes": product_codes,
+        "calculate_stochastic": calculate_stochastic,
+        "perform_attribution": perform_attribution,
+        "assumptions_text": assumptions_text
+    }
+    
+    # Start the orchestration
+    instance_id = client.start_new("CalculationOrchestrator", client_input=orchestrator_input)
+    logging.info(f"Started multi-product orchestration with ID = '{instance_id}'.")
+    
+    # Return the status check response to the UI
     return client.create_check_status_response(req, instance_id)
 
 # --- 2b. The "ORCHESTRATOR" Function (The Project Manager) ---

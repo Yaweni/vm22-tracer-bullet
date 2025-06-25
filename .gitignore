@@ -3,5 +3,6 @@
 /src/engine/.venv
 /src/engine/local.settings.json
 /.vscode/
+/src/webapp/node_modules
 
 
