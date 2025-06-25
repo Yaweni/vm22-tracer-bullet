@@ -6,7 +6,7 @@ const JobsTable = ({ newJobId }) => {
 
   const fetchJobs = async () => {
     try {
-      const response = await fetch('/api/jobs');
+      const response = await fetch('https://func-vm22-tracer-engine.azurewebsites.net/api/jobs?');
       if (!response.ok) {
         throw new Error('Failed to fetch jobs from the server.');
       }
@@ -59,7 +59,7 @@ const JobsTable = ({ newJobId }) => {
     <div className="component-panel">
       <h2>Calculation History</h2>
       <button onClick={fetchJobs}>Refresh</button>
-      {/*{error && <div className="status-message status-error">{error}</div>}*/}
+      {error && <div className="status-message status-error">{error}</div>}
       <table className="jobs-table">
         <thead>
           <tr>

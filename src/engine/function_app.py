@@ -169,7 +169,7 @@ def http_get_jobs(req: func.HttpRequest) -> func.HttpResponse:
         with engine.connect() as con:
             # Get the top 50 most recent jobs
             query = text("SELECT TOP 50 JobID, Product_Code, Job_Status, Requested_Timestamp, Completed_Timestamp FROM CalculationJobs ORDER BY JobID DESC")
-            jobs_df = pd.read_sql(query, con)
+            jobs_df = pd.read_sql(query, con,parse_dates =['Requested_Timestamp', 'Completed_Timestamp'])
         
         # Convert DataFrame to JSON and return
         jobs_json = jobs_df.to_json(orient='records', date_format='iso')
