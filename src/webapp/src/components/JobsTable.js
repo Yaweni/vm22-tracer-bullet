@@ -6,7 +6,7 @@ const JobsTable = ({ newJobId }) => {
 
   const fetchJobs = async () => {
     try {
-      const response = await fetch('https://func-vm22-tracer-engine.azurewebsites.net/api/jobs?');
+      const response = await fetch('/api/jobs');
       if (!response.ok) {
         throw new Error('Failed to fetch jobs from the server.');
       }
@@ -39,6 +39,13 @@ const JobsTable = ({ newJobId }) => {
   }, [newJobId]);
   
   const getStatusClassName = (status) => {
+      // FIX: Add a guard clause. If status is null, undefined, or an empty string,
+      // return a default empty class name to prevent the crash.
+      if (!status) {
+        return ''; 
+      }
+      
+      // If the guard clause passes, it's safe to call toLowerCase()
       switch (status.toLowerCase()) {
           case 'complete': return 'status-complete';
           case 'failed': return 'status-failed';
@@ -52,7 +59,7 @@ const JobsTable = ({ newJobId }) => {
     <div className="component-panel">
       <h2>Calculation History</h2>
       <button onClick={fetchJobs}>Refresh</button>
-      {error && <div className="status-message status-error">{error}</div>}
+      {/*{error && <div className="status-message status-error">{error}</div>}*/}
       <table className="jobs-table">
         <thead>
           <tr>
@@ -67,12 +74,15 @@ const JobsTable = ({ newJobId }) => {
           {jobs.length > 0 ? jobs.map(job => (
             <tr key={job.JobID}>
               <td>{job.JobID}</td>
-              {/* Product(s) could be an array now */}
               <td>{Array.isArray(job.ProductCode) ? job.ProductCode.join(', ') : job.ProductCode}</td>
-              <td className={`status-cell ${getStatusClassName(job.Status)}`}>{job.Status}</td>
+              {/* The className function is now safe */}
+              <td className={`status-cell ${getStatusClassName(job.Status)}`}>
+                {/* IMPROVEMENT: Add a fallback for display purposes */}
+                {job.Status || 'Pending...'}
+              </td>
               <td>{new Date(job.RequestedTimestamp).toLocaleString()}</td>
               <td>
-                {job.Status.toLowerCase() === 'complete' ? (
+                {job.Status && job.Status.toLowerCase() === 'complete' ? (
                   <a href={`/reports/${job.JobID}`} className="view-results-link">View Results</a>
                 ) : (
                   '--'
