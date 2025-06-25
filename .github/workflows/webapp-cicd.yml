@@ -27,8 +27,8 @@ jobs:
       - name: npm install, build, and test
         run: |
           cd ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
-          npm install --save react react-dom react-scripts
-          npm run build --if-present
+          npm install 
+          # npm run build --if-present
           # npm run test --if-present
 
       - name: Zip artifact for deployment
