@@ -75,7 +75,9 @@ def CalculationOrchestrator(context):
 @bp.activity_trigger(input_name="product_code")
 def CreateCalculationJob(product_code: str) -> int:
     """Activity: Creates the initial job log in SQL."""
-    sql_engine = create_engine(urllib.parse.quote_plus(os.environ["SqlConnectionString"]))
+    sql_connection_string=os.environ.get("SqlConnectionString")
+    params = urllib.parse.quote_plus(sql_connection_string)
+    sql_engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
     with sql_engine.connect() as con:
         job_id = con.execute(text("INSERT INTO CalculationJobs (Product_Code, Job_Status) OUTPUT INSERTED.JobID VALUES (:pcode, 'Pending')"), {"pcode": product_code}).scalar()
         con.commit()
@@ -86,7 +88,9 @@ def RunCalculationEngine(job_data: dict) -> float:
     """Activity: The main, high-performance calculation logic."""
     job_id = job_data['job_id']
     product_code = job_data['product_code']
-    sql_engine = create_engine(urllib.parse.quote_plus(os.environ["SqlConnectionString"]))
+    sql_connection_string=os.environ.get("SqlConnectionString")
+    params = urllib.parse.quote_plus(sql_connection_string)
+    sql_engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
     
     with sql_engine.connect() as con:
         con.execute(text("UPDATE CalculationJobs SET Job_Status = 'Running' WHERE JobID = :jobid"), {"jobid": job_id})
@@ -116,8 +120,11 @@ def RunCalculationEngine(job_data: dict) -> float:
 @bp.activity_trigger(input_name="result_data")
 def SaveResults(result_data: dict):
     """Activity: Saves the final result and updates the job status to Complete."""
-    job_id = result_data['job_id']; final_reserve = result_data['reserve']
-    sql_engine = create_engine(urllib.parse.quote_plus(os.environ["SqlConnectionString"]))
+    job_id = result_data['job_id']
+    final_reserve = result_data['reserve']
+    sql_connection_string=os.environ.get("SqlConnectionString")
+    params = urllib.parse.quote_plus(sql_connection_string)
+    sql_engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
     with sql_engine.connect() as con:
         con.execute(text("INSERT INTO Results (JobID, Result_Type, Result_Value) VALUES (:jobid, 'Deterministic_Reserve_Monthly', :resval)"), {"jobid": job_id, "resval": final_reserve})
         con.execute(text("UPDATE CalculationJobs SET Job_Status = 'Complete', Completed_Timestamp = GETDATE() WHERE JobID = :jobid"), {"jobid": job_id})
@@ -127,7 +134,9 @@ def SaveResults(result_data: dict):
 @bp.activity_trigger(input_name="job_id")
 def UpdateJobStatusToFailed(job_id: int):
     """Activity: Marks a job as Failed in the database."""
-    sql_engine = create_engine(urllib.parse.quote_plus(os.environ["SqlConnectionString"]))
+    sql_connection_string=os.environ.get("SqlConnectionString")
+    params = urllib.parse.quote_plus(sql_connection_string)
+    sql_engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
     with sql_engine.connect() as con:
         con.execute(text("UPDATE CalculationJobs SET Job_Status = 'Failed' WHERE JobID = :jobid"), {"jobid": job_id})
         con.commit()
