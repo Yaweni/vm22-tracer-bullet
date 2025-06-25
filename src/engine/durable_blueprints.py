@@ -58,8 +58,8 @@ def http_start_orchestrator(req: func.HttpRequest, client: df.DurableOrchestrati
 def CalculationOrchestrator(context):
     """Manages the workflow steps."""
     input_data = context.get_input()
-    product_code = input_data.get("product_code")
-    
+    product_code = input_data.get("product_codes")[0]
+    # This example assumes we only process the first product code for simplicity.
     try:
         job_id = yield context.call_activity("CreateCalculationJob", product_code)
         final_reserve = yield context.call_activity("RunCalculationEngine", {"job_id": job_id, "product_code": product_code})
