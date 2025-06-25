@@ -31,13 +31,13 @@ const ScenarioRunner = ({ onJobQueued }) => {
       calculate_stochastic: calcStochastic,
       perform_attribution: includeAttribution,
       assumptions_text: assumptionsText,
+      assumptionsFile: assumptionsFile ? assumptionsFile.name : null, // Only send file name for now
     };
-    
     // Note: A real implementation would use FormData to send both JSON and a file.
     // For this MVP, we are only sending the JSON configuration as specified.
 
     try {
-      const response = await fetch('/api/calculate', {
+      const response = await fetch('https://func-vm22-tracer-engine.azurewebsites.net/api/calculate?', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

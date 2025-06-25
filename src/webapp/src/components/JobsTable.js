@@ -6,7 +6,7 @@ const JobsTable = ({ newJobId }) => {
 
   const fetchJobs = async () => {
     try {
-      const response = await fetch('/api/jobs');
+      const response = await fetch('https://func-vm22-tracer-engine.azurewebsites.net/api/jobs?');
       if (!response.ok) {
         throw new Error('Failed to fetch jobs from the server.');
       }
