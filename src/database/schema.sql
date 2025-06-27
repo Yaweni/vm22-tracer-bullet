@@ -111,3 +111,66 @@ BEGIN
     ALTER TABLE EconomicScenarios ADD ScenarioSetID INT FOREIGN KEY REFERENCES ScenarioSets(ScenarioSetID);
 END
 GO
+
+
+-- This script ensures the database schema matches the new API requirements.
+
+-- Ensure Users table exists (should from previous step)
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Users' and xtype='U')
+BEGIN
+    CREATE TABLE Users (
+        UserID NVARCHAR(100) NOT NULL PRIMARY KEY,
+        IdentityProvider NVARCHAR(10) NOT NULL,
+        Email NVARCHAR(255) NOT NULL,
+        DisplayName NVARCHAR(255),
+        AppRole NVARCHAR(50) DEFAULT 'Actuary' NOT NULL,
+        CreatedDate DATETIME DEFAULT GETDATE()
+    );
+END
+GO
+
+-- Create PolicySets table
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='PolicySets' and xtype='U')
+BEGIN
+    CREATE TABLE PolicySets (
+        PolicySetID INT IDENTITY(1,1) PRIMARY KEY,
+        UserID NVARCHAR(100) NOT NULL,
+        SetName NVARCHAR(255) NOT NULL,
+        OriginalFileName NVARCHAR(255),
+        RecordCount INT,
+        UploadTimestamp DATETIME DEFAULT GETDATE()
+    );
+END
+GO
+
+-- Add UserID and PolicySetID to the Policies table
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name = N'UserID' AND Object_ID = Object_ID(N'Policies'))
+    ALTER TABLE Policies ADD UserID NVARCHAR(100);
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name = N'PolicySetID' AND Object_ID = Object_ID(N'Policies'))
+    ALTER TABLE Policies ADD PolicySetID INT FOREIGN KEY REFERENCES PolicySets(PolicySetID);
+GO
+
+-- Create ScenarioSets table
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='ScenarioSets' and xtype='U')
+BEGIN
+    CREATE TABLE ScenarioSets (
+        ScenarioSetID INT IDENTITY(1,1) PRIMARY KEY,
+        UserID NVARCHAR(100) NOT NULL,
+        SetName NVARCHAR(255) NOT NULL,
+        Granularity NVARCHAR(10) NOT NULL, -- 'Monthly' or 'Annual'
+        CreatedTimestamp DATETIME DEFAULT GETDATE()
+    );
+END
+GO
+
+-- Add UserID and ScenarioSetID to the EconomicScenarios table
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name = N'UserID' AND Object_ID = Object_ID(N'EconomicScenarios'))
+    ALTER TABLE EconomicScenarios ADD UserID NVARCHAR(100);
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name = N'ScenarioSetID' AND Object_ID = Object_ID(N'EconomicScenarios'))
+    ALTER TABLE EconomicScenarios ADD ScenarioSetID INT FOREIGN KEY REFERENCES ScenarioSets(ScenarioSetID);
+GO
+
+-- Ensure CalculationJobs has a UserID
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name = N'UserID' AND Object_ID = Object_ID(N'CalculationJobs'))
+    ALTER TABLE CalculationJobs ADD UserID NVARCHAR(100);
+GO
