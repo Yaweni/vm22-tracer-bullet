@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuthenticatedFetch } from '../hooks/useAuthenticatedFetch';
 
 const CalculationLabPage = () => {
@@ -67,7 +67,7 @@ const CalculationLabPage = () => {
               body: JSON.stringify(jobConfig)
           });
           // Handle response...
-          alert('Job queued successfully!');
+          alert('Job queued successfully!', response.status);
         } catch(error) {
           console.error('Failed to queue job', error);
           alert('Error: Could not queue job.');

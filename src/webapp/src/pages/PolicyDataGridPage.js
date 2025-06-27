@@ -24,7 +24,7 @@ const PolicyDataGridPage = () => {
                     setRowData(data);
                 }
             });
-    }, [setId, authFetch]);
+    }, );
 
     const handleCellValueChanged = (event) => {
         console.log("Saving changes for row:", event.data);

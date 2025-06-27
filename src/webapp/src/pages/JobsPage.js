@@ -10,7 +10,7 @@ const JobsPage = () => {
 
     const fetchJobs = useCallback(async () => {
         try {
-            const response = await authFetch('/api/jobs');
+            const response = await authFetch('https://func-vm22-tracer-engine.azurewebsites.net/api/jobs?');
             if (!response.ok) throw new Error('Failed to fetch jobs.');
             const data = await response.json();
             setJobs(data);
