@@ -49,3 +49,65 @@ CREATE TABLE EconomicScenarios (
     -- Create a composite primary key to ensure each scenario-month is unique
     PRIMARY KEY (ScenarioID, Month)
 );
+
+-- Create the master table for all authenticated users
+IF OBJECT_ID('Users', 'U') IS NULL
+BEGIN
+    CREATE TABLE Users (
+        UserID NVARCHAR(100) NOT NULL PRIMARY KEY, -- This will be the unique 'oid' or 'sub' from the JWT
+        IdentityProvider NVARCHAR(10) NOT NULL,    -- 'AAD' or 'B2C'
+        Email NVARCHAR(255) NOT NULL,
+        DisplayName NVARCHAR(255),
+        AppRole NVARCHAR(50) DEFAULT 'Actuary' NOT NULL, -- Our internal RBAC
+        CreatedDate DATETIME DEFAULT GETDATE()
+    );
+END
+GO
+
+IF OBJECT_ID('PolicySets', 'U') IS NULL
+BEGIN
+    CREATE TABLE PolicySets (
+    PolicySetID INT IDENTITY(1,1) PRIMARY KEY,
+    UserID NVARCHAR(100) NOT NULL,
+    SetName NVARCHAR(255) NOT NULL,
+    OriginalFileName NVARCHAR(255),
+    UploadTimestamp DATETIME DEFAULT GETDATE()
+);
+END
+GO
+
+
+IF OBJECT_ID('ScenarioSets', 'U') IS NULL
+BEGIN
+    CREATE TABLE ScenarioSets (
+        ScenarioSetID INT IDENTITY(1,1) PRIMARY KEY,
+        UserID NVARCHAR(100) NOT NULL,
+        SetName NVARCHAR(255) NOT NULL,
+        Granularity NVARCHAR(10) NOT NULL, -- 'Monthly' or 'Annual'
+        CreatedTimestamp DATETIME DEFAULT GETDATE()
+    );
+END
+GO
+
+-- Add the UserID column to all user-specific data tables
+IF COL_LENGTH('Policies', 'UserID') IS NULL
+BEGIN
+    ALTER TABLE Policies ADD UserID NVARCHAR(100);
+END
+
+
+
+-- Add a link from Policies to a PolicySet
+IF COL_LENGTH('Policies', 'PolicySetID') IS NULL
+BEGIN
+    ALTER TABLE Policies ADD PolicySetID INT FOREIGN KEY REFERENCES PolicySets(PolicySetID);
+END
+
+
+
+IF COL_LENGTH('EconomicScenarios', 'ScenarioSetID') IS NULL
+-- Add a link from EconomicScenarios to a ScenarioSet
+BEGIN
+    ALTER TABLE EconomicScenarios ADD ScenarioSetID INT FOREIGN KEY REFERENCES ScenarioSets(ScenarioSetID);
+END
+GO

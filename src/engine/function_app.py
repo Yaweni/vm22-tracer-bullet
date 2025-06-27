@@ -90,7 +90,7 @@ def http_ingest_policy_json(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.function_name(name="HttpIngestScenarios")
-@app.route(route="ingest/scenarios", auth_level=func.AuthLevel.ANONYMOUS, methods=["post"])
+@app.route(route="ingest/scenarios/csv", auth_level=func.AuthLevel.ANONYMOUS, methods=["post"])
 def http_ingest_scenarios(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP Scenario Ingestion function triggered.')
 
