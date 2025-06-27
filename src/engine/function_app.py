@@ -16,6 +16,13 @@ from durable_blueprints import bp
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 app.register_functions(bp)
 
+def get_user_id(req: func.HttpRequest) -> str:
+    """Helper function to safely extract the user's unique ID from request headers."""
+    # The 'x-ms-client-principal-id' header is automatically injected by
+    # the Azure App Service Authentication feature we just enabled.
+    return req.headers.get("x-ms-client-principal-id")
+
+
 @app.function_name(name="HttpIngestPolicyCsv")
 @app.route(route="ingest/policies/csv", auth_level=func.AuthLevel.ANONYMOUS, methods=["post"])
 def http_ingest_policy_csv(req: func.HttpRequest) -> func.HttpResponse:
@@ -149,66 +156,125 @@ def http_ingest_scenarios(req: func.HttpRequest) -> func.HttpResponse:
         logging.error(f"An error occurred during scenario ingestion: {e}", exc_info=True)
         return func.HttpResponse(f"Error during scenario ingestion: {e}", status_code=500)
 
+# In function_app.py, replace the old HttpGetJobs
 @app.function_name(name="HttpGetJobs")
-@app.route(route="jobs", auth_level=func.AuthLevel.ANONYMOUS, methods=["get"])
+@app.route(route="jobs", auth_level=func.AuthLevel.FUNCTION) # All protected routes are now 'function' or 'anonymous' if handled by API Gateway
 def http_get_jobs(req: func.HttpRequest) -> func.HttpResponse:
-    """
-    This function retrieves the calculation job history from the SQL database.
-    In V2, this would be filtered by UserID.
-    """
     logging.info('Request for job history received.')
     
-    sql_connection_string = os.environ.get("SqlConnectionString")
-    if not sql_connection_string:
-        return func.HttpResponse("FATAL: SqlConnectionString setting is missing.", status_code=500)
+    user_id = get_user_id(req)
+    if not user_id:
+        return func.HttpResponse("Authentication token is missing or invalid.", status_code=401)
 
+    sql_connection_string = os.environ.get("SqlConnectionString")
+    # ... (the rest of the function remains similar, but now includes the user check)
     try:
-        params = urllib.parse.quote_plus(sql_connection_string)
-        engine = create_engine(f"mssql+pyodbc:///?odbc_connect={params}")
-        
+        engine = create_engine(urllib.parse.quote_plus(sql_connection_string))
         with engine.connect() as con:
-            # Get the top 50 most recent jobs
-            query = text("SELECT TOP 50 JobID, Product_Code, Job_Status, Requested_Timestamp, Completed_Timestamp FROM CalculationJobs ORDER BY JobID DESC")
-            jobs_df = pd.read_sql(query, con,parse_dates =['Requested_Timestamp', 'Completed_Timestamp'])
+            # --- JIT User Provisioning Logic ---
+            user_check_query = text("SELECT COUNT(1) FROM Users WHERE UserID = :uid")
+            user_exists = con.execute(user_check_query, {"uid": user_id}).scalar()
+            
+            if not user_exists:
+                logging.info(f"New user detected. Provisioning user ID: {user_id}")
+                # Get user details from headers injected by the auth platform
+                user_email = req.headers.get("x-ms-client-principal-name")
+                # For B2C, you might get a different claim for name. This is a simple start.
+                user_display_name = req.headers.get("x-ms-client-principal-name")
+                identity_provider = req.headers.get("x-ms-client-principal-provider")
+                
+                provision_query = text("""
+                    INSERT INTO Users (UserID, IdentityProvider, Email, DisplayName) 
+                    VALUES (:uid, :idp, :email, :name)
+                """)
+                con.execute(provision_query, {"uid": user_id, "idp": identity_provider, "email": user_email, "name": user_display_name})
+                con.commit()
+            
+            # --- Fetch Jobs for the Logged-in User ONLY ---
+            query = text("SELECT TOP 50 JobID, Product_Code, Job_Status, Requested_Timestamp FROM CalculationJobs WHERE UserID = :uid ORDER BY JobID DESC")
+            jobs_df = pd.read_sql(query, con, params={"uid": user_id})
         
-        # Convert DataFrame to JSON and return
         jobs_json = jobs_df.to_json(orient='records', date_format='iso')
-        
-        return func.HttpResponse(
-            body=jobs_json,
-            mimetype="application/json",
-            status_code=200
-        )
+        return func.HttpResponse(body=jobs_json, mimetype="application/json", status_code=200)
     except Exception as e:
         return func.HttpResponse(f"Error fetching job history: {e}", status_code=500)
     
 
-@app.function_name(name="HttpGetEmbedToken")
-@app.route(route="get-embed-token", auth_level=func.AuthLevel.ANONYMOUS, methods=["get"])
-def http_get_embed_token(req: func.HttpRequest) -> func.HttpResponse:
-    """
-    This function will generate and return a secure embed token for Power BI.
-    For the MVP, we can return placeholder data.
-    The real implementation will involve using the Power BI REST API.
-    """
-    logging.info('Request for Power BI embed token received.')
+# Add this new function to function_app.py
+@app.function_name(name="HttpUpdatePolicy")
+@app.route(route="policies/update", auth_level=func.AuthLevel.FUNCTION, methods=["post"])
+def http_update_policy(req: func.HttpRequest) -> func.HttpResponse:
+    user_id = get_user_id(req)
+    if not user_id: return func.HttpResponse("Unauthorized", status_code=401)
     
-    # In a real implementation, you would:
-    # 1. Authenticate using a Service Principal.
-    # 2. Call the Power BI API to get an embed token for a specific report/dataset.
-    # 3. Return that token to the client.
-    
-    # For now, return a placeholder to allow UI development.
-    placeholder_config = {
-        "type": "report",
-        "tokenType": "Embed",
-        "accessToken": "FAKE_TOKEN_FOR_DEVELOPMENT",
-        "embedUrl": "https://app.powerbi.com/reportEmbed?reportId=FAKE_REPORT_ID",
-        "id": "FAKE_REPORT_ID"
-    }
+    try:
+        policy_data = req.get_json()
+        policy_id = policy_data.get("Policy_ID")
+        account_value = policy_data.get("Account_Value") # Example field to update
+        
+        # In a real app, you would validate all incoming fields
+        if not all([policy_id, account_value]):
+            return func.HttpResponse("Missing required fields.", status_code=400)
+            
+        sql_connection_string = os.environ.get("SqlConnectionString")
+        engine = create_engine(urllib.parse.quote_plus(sql_connection_string))
+        with engine.connect() as con:
+            query = text("UPDATE Policies SET Account_Value = :av WHERE Policy_ID = :pid AND UserID = :uid")
+            result = con.execute(query, {"av": account_value, "pid": policy_id, "uid": user_id})
+            con.commit()
+            if result.rowcount == 0:
+                return func.HttpResponse("Policy not found or you do not have permission.", status_code=404)
 
-    return func.HttpResponse(
-        body=json.dumps(placeholder_config),
-        mimetype="application/json",
-        status_code=200
-    )
+        return func.HttpResponse(f"Policy {policy_id} updated successfully.", status_code=200)
+    except Exception as e:
+        return func.HttpResponse(f"Error updating policy: {e}", status_code=500)
+
+# Add this new function to function_app.py
+@app.function_name(name="HttpDeletePolicy")
+@app.route(route="policies/{policyId}", auth_level=func.AuthLevel.FUNCTION, methods=["delete"])
+def http_delete_policy(req: func.HttpRequest) -> func.HttpResponse:
+    user_id = get_user_id(req)
+    if not user_id: return func.HttpResponse("Unauthorized", status_code=401)
+    
+    policy_id = req.route_params.get('policyId')
+    
+    try:
+        sql_connection_string = os.environ.get("SqlConnectionString")
+        engine = create_engine(urllib.parse.quote_plus(sql_connection_string))
+        with engine.connect() as con:
+            query = text("DELETE FROM Policies WHERE Policy_ID = :pid AND UserID = :uid")
+            result = con.execute(query, {"pid": policy_id, "uid": user_id})
+            con.commit()
+            if result.rowcount == 0:
+                return func.HttpResponse("Policy not found or you do not have permission.", status_code=404)
+                
+        return func.HttpResponse(f"Policy {policy_id} deleted successfully.", status_code=200)
+    except Exception as e:
+        return func.HttpResponse(f"Error deleting policy: {e}", status_code=500)
+    
+    # Add this new function to function_app.py
+@app.function_name(name="HttpGetPolicySets")
+@app.route(route="my-policy-sets", auth_level=func.AuthLevel.FUNCTION, methods=["get"])
+def http_get_policy_sets(req: func.HttpRequest) -> func.HttpResponse:
+    user_id = get_user_id(req)
+    if not user_id: return func.HttpResponse("Unauthorized", status_code=401)
+
+    # Logic to query the PolicySets table for the given UserID
+    # ... return a JSON list of sets
+    # Placeholder for now:
+    return func.HttpResponse(json.dumps([{"PolicySetID": 1, "SetName": "Q1 2024 Policies"}]))
+
+
+# Add this new function to function_app.py
+@app.function_name(name="HttpGetProductCodes")
+@app.route(route="product-codes", auth_level=func.AuthLevel.FUNCTION, methods=["get"])
+def http_get_product_codes(req: func.HttpRequest) -> func.HttpResponse:
+    user_id = get_user_id(req)
+    if not user_id: return func.HttpResponse("Unauthorized", status_code=401)
+    
+    policy_set_ids_str = req.params.get('setIds') # e.g., "1,2,3"
+    
+    # Logic to run SELECT DISTINCT Product_Code FROM Policies WHERE UserID = ... AND PolicySetID IN (...)
+    # ... return a JSON list of product codes
+    # Placeholder for now:
+    return func.HttpResponse(json.dumps(["SPDA_G3", "VA_GLWB5"]))

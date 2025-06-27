@@ -194,3 +194,14 @@ button:disabled {
 .view-results-link:hover {
     text-decoration: underline;
 }
+
+.login-container { display: flex; align-items: center; justify-content: center; height: 100vh; background-color: #f4f7fa; }
+.login-box { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); text-align: center; max-width: 400px; width: 100%; }
+.login-button { display: block; width: 100%; padding: 12px; margin-top: 15px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: 600; background-color: #3498db; color: white; transition: background-color 0.2s; }
+.login-button:hover { background-color: #2980b9; }
+
+.status-cell.status-complete { color: #27ae60; font-weight: bold; }
+.status-cell.status-running { color: #f39c12; font-weight: bold; }
+.status-cell.status-failed { color: #c0392b; font-weight: bold; }
+.status-cell.status-queued { color: #8e44ad; font-weight: bold; }
+.status-cell.status-unknown { color: #7f8c8d; }
