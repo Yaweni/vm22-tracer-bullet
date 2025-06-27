@@ -23,7 +23,7 @@ const DataIngestion = () => {
     setStatus({ message: 'Uploading and processing file...', type: 'loading' });
 
     try {
-      const response = await fetch('https://func-vm22-tracer-engine.azurewebsites.net/api/ingest/policies/csv?', {
+      const response = await fetch('/ingest/policies/csv?', {
         method: 'POST',
         headers: {
           'Content-Type': 'text/csv',
@@ -54,7 +54,7 @@ const DataIngestion = () => {
     setStatus({ message: 'Connecting and fetching data...', type: 'loading' });
 
     try {
-      const response = await fetch('https://func-vm22-tracer-engine.azurewebsites.net/api/ingest/policies/json?', {
+      const response = await fetch('/ingest/policies/json?', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

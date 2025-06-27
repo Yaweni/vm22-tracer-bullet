@@ -27,13 +27,13 @@ const FileUpload = ({ label, getUploadUrlEndpoint }) => {
             setStatus({ message: 'Uploading file...', type: 'loading' });
 
             // Step 2: Use the returned URL to upload the file directly to cloud storage
-            // Note: We use the native fetch() here, not our authenticated hook,
-            // because the URL is pre-signed and contains all necessary auth.
-            // The method is often PUT for services like S3 or Azure Blob Storage.
             const uploadResponse = await fetch(uploadUrl, {
                 method: 'PUT',
-                headers: { 'Content-Type': selectedFile.type },
                 body: selectedFile,
+                headers: {
+                    // ** CHANGE: Added the required header from the backend spec **
+                    'x-ms-blob-type': 'BlockBlob' 
+                },
             });
 
             if (!uploadResponse.ok) throw new Error('File upload failed.');
@@ -55,7 +55,7 @@ const FileUpload = ({ label, getUploadUrlEndpoint }) => {
                 id="file-input"
                 type="file"
                 onChange={handleFileChange}
-                key={selectedFile ? 'file-selected' : 'no-file'} // Resets the input field
+                key={selectedFile ? 'file-selected' : 'no-file'}
             />
             <button onClick={handleUpload} disabled={!selectedFile || isLoading}>
                 {isLoading ? 'Uploading...' : 'Upload & Process File'}

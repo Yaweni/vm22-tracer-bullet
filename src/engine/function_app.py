@@ -111,7 +111,129 @@ def http_get_policies(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         return func.HttpResponse(f"Error fetching policies: {e}", status_code=500)
 
-# Other data management endpoints (Update, Delete, ListScenarios, etc.) would follow the same secure pattern.
+
+
+@app.function_name(name="HttpListScenarioSets")
+@app.route(route="scenario-sets", methods=["GET"])
+def http_list_scenario_sets(req: func.HttpRequest) -> func.HttpResponse:
+    """Fetches a list of all economic scenario sets the logged-in user has uploaded."""
+    user_id = get_user_id(req)
+    if not user_id: return func.HttpResponse("Unauthorized.", status_code=401)
+    
+    try:
+        engine = get_sql_engine()
+        with engine.connect() as con:
+            query = text("SELECT ScenarioSetID as id, SetName as name, Granularity, CreatedTimestamp as createdAt FROM ScenarioSets WHERE UserID = :uid ORDER BY CreatedTimestamp DESC")
+            sets_df = pd.read_sql(query, con, params={"uid": user_id})
+        
+        return func.HttpResponse(sets_df.to_json(orient='records', date_format='iso'), mimetype="application/json")
+    except Exception as e:
+        return func.HttpResponse(f"Error fetching scenario sets: {e}", status_code=500)
+
+# --- Endpoint 2: Get a secure upload URL for a new Scenario file ---
+
+@app.function_name(name="HttpGetUploadUrlForScenarios")
+@app.route(route="scenario-sets/get-upload-url", methods=["GET"])
+def http_get_upload_url_for_scenarios(req: func.HttpRequest) -> func.HttpResponse:
+    """Provides a secure, temporary URL for the frontend to upload a scenario file directly to Blob Storage."""
+    user_id = get_user_id(req)
+    if not user_id: return func.HttpResponse("Unauthorized.", status_code=401)
+    
+    file_name = req.params.get('fileName')
+    if not file_name: return func.HttpResponse("fileName query parameter is required.", status_code=400)
+
+    try:
+        storage_conn_str = os.environ["AzureWebJobsStorage"]
+        container_name = "raw-uploads"
+        # We use a different subfolder for organization
+        blob_name = blob_name = f"{user_id}/scenarios/{datetime.now().strftime('%Y%m%d%H%M%S')}_{file_name}"
+
+        sas_token = generate_blob_sas(
+            account_name=BlobServiceClient.from_connection_string(storage_conn_str).account_name,
+            container_name=container_name,
+            blob_name=blob_name,
+            account_key=BlobServiceClient.from_connection_string(storage_conn_str).credential.account_key,
+            permission=BlobSasPermissions(create=True, write=True, read=True),
+            expiry=datetime.now() + timedelta(hours=1)
+        )
+        upload_url = f"https://{BlobServiceClient.from_connection_string(storage_conn_str).account_name}.blob.core.windows.net/{container_name}/{blob_name}?{sas_token}"
+        
+        return func.HttpResponse(json.dumps({"uploadUrl": upload_url}), mimetype="application/json")
+    except Exception as e:
+        return func.HttpResponse(f"Error generating upload URL: {e}", status_code=500)
+
+# --- Endpoint 3: Update a single Policy row ---
+# This is a more robust version of the placeholder from before.
+
+@app.function_name(name="HttpUpdatePolicy")
+@app.route(route="policies/update", auth_level=func.AuthLevel.FUNCTION, methods=["POST"])
+def http_update_policy(req: func.HttpRequest) -> func.HttpResponse:
+    """Updates one or more fields for a single policy record."""
+    user_id = get_user_id(req)
+    if not user_id: return func.HttpResponse("Unauthorized", status_code=401)
+    
+    try:
+        policy_data = req.get_json()
+        policy_id = policy_data.get("id") # The frontend sends 'id', which is our Policy_ID
+        
+        if not policy_id:
+            return func.HttpResponse("Missing required field: 'id'", status_code=400)
+        
+        # Build the dynamic part of the UPDATE statement
+        # This makes the function flexible to update any column.
+        update_fields = []
+        params = {"pid": policy_id, "uid": user_id}
+        
+        # Iterate over allowed columns to prevent SQL injection
+        allowed_columns = ["Account_Value", "Issue_Age", "Gender"] # Add more editable columns here
+        for col in allowed_columns:
+            if col in policy_data:
+                update_fields.append(f"{col} = :{col.lower()}")
+                params[col.lower()] = policy_data[col]
+
+        if not update_fields:
+            return func.HttpResponse("No valid fields to update were provided.", status_code=400)
+            
+        set_clause = ", ".join(update_fields)
+        
+        engine = get_sql_engine()
+        with engine.connect() as con:
+            # Note the WHERE clause includes UserID for security
+            query = text(f"UPDATE Policies SET {set_clause} WHERE Policy_ID = :pid AND UserID = :uid")
+            result = con.execute(query, params)
+            con.commit()
+            
+            if result.rowcount == 0:
+                return func.HttpResponse("Policy not found or you do not have permission.", status_code=404)
+
+        return func.HttpResponse(f"Policy {policy_id} updated successfully.", status_code=200)
+    except Exception as e:
+        return func.HttpResponse(f"Error updating policy: {e}", status_code=500)
+
+
+@app.function_name(name="HttpDeletePolicy")
+@app.route(route="policies/{policyId}", auth_level=func.AuthLevel.FUNCTION, methods=["DELETE"])
+def http_delete_policy(req: func.HttpRequest) -> func.HttpResponse:
+    """Deletes a single policy record."""
+    user_id = get_user_id(req)
+    if not user_id: return func.HttpResponse("Unauthorized", status_code=401)
+    
+    policy_id = req.route_params.get('policyId')
+    
+    try:
+        engine = get_sql_engine()
+        with engine.connect() as con:
+            # The WHERE clause ensures a user can only delete their own policies
+            query = text("DELETE FROM Policies WHERE Policy_ID = :pid AND UserID = :uid")
+            result = con.execute(query, {"pid": policy_id, "uid": user_id})
+            con.commit()
+
+            if result.rowcount == 0:
+                return func.HttpResponse("Policy not found or you do not have permission.", status_code=404)
+                
+        return func.HttpResponse(f"Policy {policy_id} deleted successfully.", status_code=204) # 204 No Content is best for DELETE
+    except Exception as e:
+        return func.HttpResponse(f"Error deleting policy: {e}", status_code=500)
 
 # =================================================================
 #  SECTION 2: CALCULATION LAB & JOB HISTORY API
@@ -223,22 +345,18 @@ def http_get_job_embed_token(req: func.HttpRequest) -> func.HttpResponse:
 
 
 
-    # =================================================================
-#  SECTION 5: BLOB-TRIGGERED INGESTION WORKER
-# =================================================================
-
 @app.function_name(name="BlobIngestPolicies")
 @app.blob_trigger(
     arg_name="blob",
-    path="raw-uploads/{user_id}/policies/{name}", # This path pattern lets us get user_id and filename
+    path="raw-uploads/{user_id}/policies/{name}",
     connection="AzureWebJobsStorage"
 )
 def blob_ingest_policies(blob: func.InputStream):
     """
-    This function is triggered by a new blob in the uploads container.
+    This function is triggered by a new blob in the uploads container, for uploading policies.
     It validates the data and loads it into the SQL Policies table.
     """
-    logging.info(f"Python blob trigger function processed blob: {blob.name}")
+    logging.info(f"Processing scenario file: {blob.name}")
     logging.info(f"Blob size: {blob.length} Bytes")
     
     # Extract metadata from the blob path, e.g., "userid-123/policies/q1_data.csv"
@@ -285,4 +403,47 @@ def blob_ingest_policies(blob: func.InputStream):
 
     except Exception as e:
         logging.error(f"Error processing blob {blob.name}: {e}", exc_info=True)
-        # In a real app, you would move the failed blob to an 'error' container.
+        
+
+
+@app.function_name(name="BlobIngestScenarios")
+@app.blob_trigger(arg_name="blob", path="raw-uploads/{user_id}/scenarios/{name}", connection="AzureWebJobsStorage")
+def blob_ingest_scenarios(blob: func.InputStream):
+
+    """Triggered by a new blob in the 'scenarios' subfolder. Processes scenario files."""
+
+    logging.info(f"Processing scenario file: {blob.name}")
+    parts = blob.name.split('/')
+    user_id = parts[1]
+    original_file_name = parts[3]
+
+    sql_connection_string = os.environ.get("SqlConnectionString")
+    if not sql_connection_string:
+        logging.error("FATAL: SqlConnectionString setting is missing.")
+        return # Cannot proceed
+    # --- Data Validation & Processing ---
+    csv_data = blob.read()
+    df = pd.read_csv(io.BytesIO(csv_data))
+
+    # TODO: Implement your data compliance/validation logic here.
+    # For now, we assume the file is good.
+    # In a real app, you would split good/bad rows and save bad rows to a 'quarantine' container.
+
+    # --- Database Operations ---
+    engine = get_sql_engine()
+    with engine.connect() as con:
+        # 1. Create a new ScenarioSet record for this upload
+        set_insert_query = text("INSERT INTO ScenarioSets (UserID, SetName, OriginalFileName, Granularity) OUTPUT INSERTED.ScenarioSetID VALUES (:uid, :sname, :fname, :gran)")
+        scenario_set_id = con.execute(set_insert_query, {
+            "uid": user_id,
+            "sname": f"Set from {original_file_name}",
+            "fname": original_file_name,
+            "gran": "Monthly"  # Assuming monthly granularity for now
+        }).scalar()
+        con.commit()
+
+        df['UserID'] = user_id
+        df['ScenarioSetID'] = scenario_set_id
+        
+        # 3. Load the validated data into the master EconomicScenarios table
+        df.to_sql('EconomicScenarios', con=engine, if_exists='append', index=False, chunksize=1000) 

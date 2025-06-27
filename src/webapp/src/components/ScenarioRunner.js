@@ -37,7 +37,7 @@ const ScenarioRunner = ({ onJobQueued }) => {
     // For this MVP, we are only sending the JSON configuration as specified.
 
     try {
-      const response = await fetch('https://func-vm22-tracer-engine.azurewebsites.net/api/calculate?', {
+      const response = await fetch('/calculate?', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

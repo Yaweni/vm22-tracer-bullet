@@ -1,24 +1,39 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import './Sidebar.css'; // We'll create this for styling
+import { useMsal } from "@azure/msal-react";
+import './Sidebar.css'; // Assuming you have this CSS file
 
 const Sidebar = () => {
-  return (
-    <nav className="sidebar">
-      <ul>
-        <li>
-          <NavLink to="/ingestion">1. Data Ingestion</NavLink>
-        </li>
-        <li>
-          <NavLink to="/calculation">2. Run Calculation</NavLink>
-        </li>
-        <li>
-          <NavLink to="/jobs">3. View Jobs</NavLink>
-        </li>
-        {/* Add more links here later, e.g., for Assumptions */}
-      </ul>
-    </nav>
-  );
+    const { instance } = useMsal();
+
+    const handleLogout = () => {
+        instance.logoutPopup({
+            postLogoutRedirectUri: "/",
+            mainWindowRedirectUri: "/"
+        });
+    };
+
+    return (
+        <nav className="sidebar">
+            <div className="sidebar-header">
+                <h3>Actuarial Hub</h3>
+            </div>
+            <ul>
+                <li>
+                    <NavLink to="/data">Data Management</NavLink>
+                </li>
+                <li>
+                    <NavLink to="/calculation">Calculation Lab</NavLink>
+                </li>
+                <li>
+                    <NavLink to="/jobs">Job History</NavLink>
+                </li>
+            </ul>
+            <div className="sidebar-footer">
+                <button onClick={handleLogout} className="logout-button">Sign Out</button>
+            </div>
+        </nav>
+    );
 };
 
 export default Sidebar;

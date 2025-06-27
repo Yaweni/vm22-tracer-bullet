@@ -28,7 +28,7 @@ const PolicyDataGridPage = () => {
 
     const handleCellValueChanged = (event) => {
         console.log("Saving changes for row:", event.data);
-        authFetch('/api/policies/update', {
+        authFetch('/policies/update', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(event.data)
@@ -38,7 +38,7 @@ const PolicyDataGridPage = () => {
     const DeleteButtonRenderer = (props) => {
       const handleDelete = () => {
         if(window.confirm(`Delete policy ${props.data.id}?`)) {
-          authFetch(`/api/policies/${props.data.id}`, { method: 'DELETE' })
+          authFetch(`/policies/${props.data.id}`, { method: 'DELETE' })
             .then(res => {
               if (res.ok) {
                 // Refresh data or remove row from grid state

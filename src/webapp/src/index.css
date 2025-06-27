@@ -205,3 +205,13 @@ button:disabled {
 .status-cell.status-failed { color: #c0392b; font-weight: bold; }
 .status-cell.status-queued { color: #8e44ad; font-weight: bold; }
 .status-cell.status-unknown { color: #7f8c8d; }
+
+.sidebar { display: flex; flex-direction: column; width: 240px; background: #2c3e50; color: white; height: 100vh; position: fixed; }
+.sidebar-header { padding: 20px; text-align: center; border-bottom: 1px solid #34495e; }
+.sidebar ul { list-style-type: none; padding: 0; flex-grow: 1; }
+.sidebar li a { display: block; padding: 15px 25px; color: #ecf0f1; text-decoration: none; font-weight: 500; border-left: 4px solid transparent; transition: background-color 0.2s; }
+.sidebar li a:hover { background-color: #34495e; }
+.sidebar li a.active { background-color: #46627f; border-left: 4px solid #3498db; }
+.sidebar-footer { padding: 20px; border-top: 1px solid #34495e; }
+.logout-button { width: 100%; padding: 10px; background: #c0392b; color: white; border: none; border-radius: 4px; cursor: pointer; }
+.logout-button:hover { background: #e74c3c; }

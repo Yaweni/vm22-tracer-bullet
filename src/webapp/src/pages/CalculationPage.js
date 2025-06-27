@@ -19,11 +19,6 @@ const CalculationPage = () => {
   const [status, setStatus] = useState({ message: '', type: '' });
 
 
-  // In a real app, you would fetch this data
-  // useEffect(() => {
-  //   fetch('/api/data/products').then(res => res.json()).then(setAvailableProducts);
-  //   fetch('/api/data/scenarios').then(res => res.json()).then(setAvailableScenarios);
-  // }, []);
 
   const handleProductChange = (e) => {
     const { value, checked } = e.target;
@@ -44,7 +39,7 @@ const CalculationPage = () => {
     };
 
     try {
-      const response = await fetch('/api/calculate', {
+      const response = await fetch('/calculate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(jobConfig),

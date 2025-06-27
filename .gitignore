@@ -4,5 +4,7 @@
 /src/engine/local.settings.json
 /.vscode/
 /src/webapp/node_modules
+.env
+/src/webapp/.env
 
 

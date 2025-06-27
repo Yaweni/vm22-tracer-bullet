@@ -20,8 +20,8 @@ const CalculationLabPage = () => {
     
     // Fetch initial data (policy sets, scenarios)
     useEffect(() => {
-        authFetch('/api/my-policy-sets').then(res => res.json()).then(setPolicySets);
-        authFetch('/api/my-scenarios').then(res => res.json()).then(setScenarios);
+        authFetch('/policy-sets').then(res => res.json()).then(setPolicySets);
+        authFetch('/scenario-sets').then(res => res.json()).then(setScenarios);
     }, [authFetch]);
 
     // ** DYNAMIC LOGIC **
@@ -61,7 +61,7 @@ const CalculationLabPage = () => {
         };
         
         try {
-          const response = await authFetch('/api/calculate', {
+          const response = await authFetch('/calculate', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(jobConfig)

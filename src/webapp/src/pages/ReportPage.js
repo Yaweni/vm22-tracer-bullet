@@ -35,8 +35,8 @@ const ReportPage = () => {
             try {
                 // Fetch both results and embed token in parallel
                 const [resultsResponse, tokenResponse] = await Promise.all([
-                    authFetch(`/api/jobs/${jobId}/results`),
-                    authFetch(`/api/jobs/${jobId}/embed-token`) // Updated to a more RESTful endpoint
+                    authFetch(`/jobs/${jobId}/results`),
+                    authFetch(`/jobs/${jobId}/embed-token`) // Updated to a more RESTful endpoint
                 ]);
 
                 if (!resultsResponse.ok || !tokenResponse.ok) {
