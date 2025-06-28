@@ -25,7 +25,7 @@ app.register_functions(bp)
 def get_user_id(req: func.HttpRequest) -> str:
     """Safely extracts the user's unique ID from validated request headers."""
       # Ensure headers are loaded
-    headers=req.headers.items()
+    headers=dict(req.headers.items())
     logging.info(f"Extracting user ID from request headers: {headers}")
     return req.headers.get("x-ms-client-principal-id")
 
