@@ -64,7 +64,7 @@ def http_list_policy_sets(req: func.HttpRequest) -> func.HttpResponse:
     try:
         engine = get_sql_engine()
         with engine.connect() as con:
-            query = text("SELECT PolicySetID as id, SetName as name, RecordCount, UploadTimestamp as createdAt FROM PolicySets WHERE UserID = :uid ORDER BY UploadTimestamp DESC")
+            query = text("SELECT PolicySetID as id, SetName as name, UploadTimestamp as createdAt FROM PolicySets WHERE UserID = :uid ORDER BY UploadTimestamp DESC")
             df = pd.read_sql(query, con, params={"uid": user_id})
         return func.HttpResponse(df.to_json(orient='records', date_format='iso'), mimetype="application/json")
     except Exception as e:
@@ -134,6 +134,7 @@ def http_list_scenario_sets(req: func.HttpRequest) -> func.HttpResponse:
         
         return func.HttpResponse(sets_df.to_json(orient='records', date_format='iso'), mimetype="application/json")
     except Exception as e:
+        logging.error(f"Error fetching scenario sets for user {user_id}: {e}", exc_info=True)
         return func.HttpResponse(f"Error fetching scenario sets: {e}", status_code=500)
 
 # --- Endpoint 2: Get a secure upload URL for a new Scenario file ---
@@ -264,6 +265,7 @@ def http_get_product_codes_for_sets(req: func.HttpRequest) -> func.HttpResponse:
             df = pd.read_sql(query, con, params=params)
         return func.HttpResponse(json.dumps(df['Product_Code'].tolist()), mimetype="application/json")
     except Exception as e:
+        logging.error(f"Error fetching product codes for sets {set_ids_str} for user {user_id}: {e}", exc_info=True)
         return func.HttpResponse(f"Error fetching product codes: {e}", status_code=500)
 
 @app.function_name(name="HttpGetJobs")
@@ -280,6 +282,7 @@ def http_get_jobs(req: func.HttpRequest) -> func.HttpResponse:
             df = pd.read_sql(query, con, params={"uid": user_id})
         return func.HttpResponse(df.to_json(orient='records', date_format='iso'), mimetype="application/json")
     except Exception as e:
+        logging.error(f"Error fetching job history for user {user_id}: {e}", exc_info=True)
         return func.HttpResponse(f"Error fetching job history: {e}", status_code=500)
 
 
