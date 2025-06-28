@@ -24,6 +24,9 @@ app.register_functions(bp)
 # --- 2. Helper Functions ---
 def get_user_id(req: func.HttpRequest) -> str:
     """Safely extracts the user's unique ID from validated request headers."""
+      # Ensure headers are loaded
+    headers=req.headers.items()
+    logging.info(f"Extracting user ID from request headers: {headers}")
     return req.headers.get("x-ms-client-principal-id")
 
 def get_sql_engine():
