@@ -13,7 +13,7 @@ from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPerm
 
 # --- 1. Main App and Blueprint Registration ---
 # Create the main app object
-app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
+app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 # Import the durable blueprint and register it with the main app
 from durable_blueprints import bp

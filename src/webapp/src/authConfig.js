@@ -14,13 +14,13 @@ export const msalConfig = {
 
         // The Redirect URI must exactly match what you entered in the
         // app registration in the Azure portal.
-        redirectUri: "http://localhost:3001",
+        redirectUri: "http://localhost:3000",
 
         // This is recommended for CIAM scenarios to ensure MSAL recognizes the authority.
         knownAuthorities: ["vm22actuarialhub2.ciamlogin.com"],
 
         // Optional: If you have a separate logout page. If not, can be same as redirectUri.
-        postLogoutRedirectUri: "http://localhost:3001/logout",
+        postLogoutRedirectUri: "http://localhost:3000/logout",
     },
     cache: {
         cacheLocation: "sessionStorage", // "sessionStorage" is good for security, "localStorage" for persistence.
@@ -51,5 +51,5 @@ export const loginRequest = {
 // Define the scopes needed to call your Azure Function backend.
 // You need to configure this in Azure first.
 export const protectedApiRequest = {
-    scopes: ["api://8898913c-d6a9-4a69-a68d-bd8af47c12bd/api.access"]
+    scopes: ["api://8898913c-d6a9-4a69-a68d-bd8af47c12bd/user_impersonation"]
 };

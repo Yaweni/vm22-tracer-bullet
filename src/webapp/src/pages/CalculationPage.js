@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-
+import { useAuthenticatedFetch } from '../hooks/useAuthenticatedFetch';
 // The original ScenarioRunner logic is now inside this page component
 const CalculationPage = () => {
   // Mock data for now. This would be fetched from your API.
@@ -39,7 +39,7 @@ const CalculationPage = () => {
     };
 
     try {
-      const response = await fetch('/calculate', {
+      const response = await authFetch('/api/calculate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(jobConfig),

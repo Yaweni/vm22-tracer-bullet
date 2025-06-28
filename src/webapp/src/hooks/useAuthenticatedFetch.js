@@ -15,6 +15,7 @@ export const useAuthenticatedFetch = () => {
             account: account
         });
         
+
         // ** CHANGE: Construct the full URL using the environment variable **
         const fullUrl = `${process.env.REACT_APP_API_BASE_URL}${relativeUrl}`;
 
