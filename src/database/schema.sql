@@ -174,3 +174,7 @@ GO
 IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name = N'UserID' AND Object_ID = Object_ID(N'CalculationJobs'))
     ALTER TABLE CalculationJobs ADD UserID NVARCHAR(100);
 GO
+
+IF NOT EXISTS (SELECT * FROM sys.columns WHERE Name = N'RecordCount' AND Object_ID = Object_ID(N'PolicySets'))
+    ALTER TABLE PolicySets ADD RecordCount INT DEFAULT 0;   
+GO

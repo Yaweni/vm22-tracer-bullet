@@ -64,7 +64,7 @@ def http_list_policy_sets(req: func.HttpRequest) -> func.HttpResponse:
     try:
         engine = get_sql_engine()
         with engine.connect() as con:
-            query = text("SELECT PolicySetID as id, SetName as name, UploadTimestamp as createdAt FROM PolicySets WHERE UserID = :uid ORDER BY UploadTimestamp DESC")
+            query = text("SELECT PolicySetID as id, SetName as name,RecordCount, UploadTimestamp as createdAt FROM PolicySets WHERE UserID = :uid ORDER BY UploadTimestamp DESC")
             df = pd.read_sql(query, con, params={"uid": user_id})
         return func.HttpResponse(df.to_json(orient='records', date_format='iso'), mimetype="application/json")
     except Exception as e:
