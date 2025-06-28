@@ -5,7 +5,7 @@ export const msalConfig = {
     auth: {
         // This is the Application (client) ID from your app registration
         // in your "vm22actuarialhub2" customer tenant.
-        clientId: "8898913c-d6a9-4a69-a68d-bd8af47c12bd",
+        clientId: "6e7d3f60-b9ab-4654-9fb4-c54769bf1527",
 
         // This is the authority URL for Entra ID for customers (CIAM).
         // It's your customer tenant's subdomain with "ciamlogin.com".
@@ -51,5 +51,5 @@ export const loginRequest = {
 // Define the scopes needed to call your Azure Function backend.
 // You need to configure this in Azure first.
 export const protectedApiRequest = {
-    scopes: ["api://8898913c-d6a9-4a69-a68d-bd8af47c12bd/user_impersonation"]
+    scopes: ["api://6e7d3f60-b9ab-4654-9fb4-c54769bf1527/user_impersonation"]
 };

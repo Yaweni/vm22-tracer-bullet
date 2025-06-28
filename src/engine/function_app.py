@@ -58,6 +58,7 @@ def provision_user_if_not_exists(user_id: str, req: func.HttpRequest, con):
 @app.route(route="policy-sets", methods=["GET"])
 def http_list_policy_sets(req: func.HttpRequest) -> func.HttpResponse:
     user_id = get_user_id(req)
+    logging.info(f"User ID extracted for policy sets: {user_id}")
     if not user_id: return func.HttpResponse("Unauthorized.", status_code=401)
     
     try:
@@ -67,6 +68,7 @@ def http_list_policy_sets(req: func.HttpRequest) -> func.HttpResponse:
             df = pd.read_sql(query, con, params={"uid": user_id})
         return func.HttpResponse(df.to_json(orient='records', date_format='iso'), mimetype="application/json")
     except Exception as e:
+        logging.error(f"Error fetching policy sets for user {user_id}: {e}", exc_info=True)
         return func.HttpResponse(f"Error fetching policy sets: {e}", status_code=500)
 
 
